@@ -1,0 +1,1172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Airport Bomber Defense</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #111; display: flex; justify-content: center; align-items: center; height: 100vh; font-family: 'Segoe UI', sans-serif; overflow: hidden; }
+canvas { border: 2px solid #333; display: block; }
+#menu { position: absolute; background: rgba(0,0,0,0.92); color: #eee; padding: 40px; border-radius: 12px; text-align: center; min-width: 400px; }
+#menu h1 { font-size: 32px; margin-bottom: 8px; color: #f90; }
+#menu h2 { font-size: 14px; color: #888; margin-bottom: 24px; }
+#menu label { display: block; margin: 12px 0 4px; font-size: 14px; color: #aaa; text-align: left; }
+#menu select, #menu input { width: 100%; padding: 8px; border-radius: 6px; border: 1px solid #555; background: #222; color: #eee; font-size: 14px; }
+#menu button { margin-top: 24px; padding: 12px 40px; font-size: 18px; background: #f90; color: #111; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; }
+#menu button:hover { background: #fa0; }
+#hud { position: absolute; top: 10px; left: 10px; color: #eee; font-size: 13px; pointer-events: none; }
+#hud div { margin: 2px 0; }
+.bar-bg { display: inline-block; width: 120px; height: 12px; background: #333; border-radius: 3px; vertical-align: middle; }
+.bar-fill { height: 100%; border-radius: 3px; transition: width 0.2s; }
+#gameOverScreen { position: absolute; background: rgba(0,0,0,0.88); color: #eee; padding: 40px; border-radius: 12px; text-align: center; display: none; }
+#gameOverScreen h1 { color: #f44; font-size: 36px; }
+#gameOverScreen p { margin: 12px 0; font-size: 18px; }
+#gameOverScreen button { margin-top: 16px; padding: 10px 32px; font-size: 16px; background: #f90; color: #111; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; }
+#controls { position: absolute; bottom: 10px; left: 10px; color: #666; font-size: 11px; pointer-events: none; }
+</style>
+</head>
+<body>
+
+<canvas id="game"></canvas>
+
+<div id="menu">
+  <h1>Airport Bomber Defense</h1>
+  <h2>Defend your airport from the stick figure invasion!</h2>
+  <label>Difficulty Level</label>
+  <select id="difficulty">
+    <option value="1">Level 1 — Basic (slow runners, 1 hit kill)</option>
+    <option value="2">Level 2 — Hard (faster, tougher enemies)</option>
+    <option value="3">Level 3 — Brutal (fast, tough, they shoot back!)</option>
+  </select>
+  <label>Bombs Per Reload</label>
+  <input type="number" id="bombCount" value="5" min="1" max="50">
+  <label>Enemy Speed</label>
+  <input type="range" id="enemySpeed" min="0.1" max="2" step="0.1" value="0.5">
+  <span id="enemySpeedVal" style="color:#aaa;font-size:12px;">0.5x</span>
+  <label>Enemy Size</label>
+  <input type="range" id="enemySize" min="0.3" max="1.5" step="0.1" value="0.6">
+  <span id="enemySizeVal" style="color:#aaa;font-size:12px;">0.6x</span>
+  <label>Spawn Rate (lower = more frequent)</label>
+  <input type="range" id="spawnRate" min="20" max="300" step="10" value="120">
+  <span id="spawnRateVal" style="color:#aaa;font-size:12px;">120 frames</span>
+  <button onclick="startGame()">Take Off!</button>
+  <script>
+    document.getElementById('enemySpeed').oninput = function() { document.getElementById('enemySpeedVal').textContent = this.value + 'x'; };
+    document.getElementById('enemySize').oninput = function() { document.getElementById('enemySizeVal').textContent = this.value + 'x'; };
+    document.getElementById('spawnRate').oninput = function() { document.getElementById('spawnRateVal').textContent = this.value + ' frames'; };
+  </script>
+</div>
+
+<div id="hud" style="display:none;">
+  <div>Score: <span id="scoreVal">0</span></div>
+  <div>Bombs: <span id="bombVal">5</span> <span id="reloadMsg" style="color:#f44;font-weight:bold;display:none;"> RELOAD! Land on runway!</span></div>
+  <div>Plane HP: <span class="bar-bg"><span id="planeHPBar" class="bar-fill" style="width:100%;background:#4f4;"></span></span></div>
+  <div>Airport HP: <span class="bar-bg"><span id="airportHPBar" class="bar-fill" style="width:100%;background:#48f;"></span></span></div>
+  <div>Zoom: <span id="zoomVal">1.0x</span> &nbsp; Nozzle: <span id="nozzleVal">0°</span></div>
+  <div style="margin-top:4px;color:#666;font-size:11px;">[W/S] Pitch &nbsp; [Q/E] Nozzle &nbsp; [DD] Thrust right &nbsp; [AA] Thrust left &nbsp; [Space] Bomb &nbsp; [F] Gun &nbsp; [V] Cam &nbsp; [Scroll] Zoom</div>
+</div>
+
+<div id="gameOverScreen">
+  <h1>GAME OVER</h1>
+  <p id="gameOverReason"></p>
+  <p>Final Score: <span id="finalScore">0</span></p>
+  <button onclick="location.reload()">Play Again</button>
+</div>
+
+<div id="controls">W/S: Pitch &nbsp;|&nbsp; Q/E: Nozzle &nbsp;|&nbsp; DD: Thrust → &nbsp;|&nbsp; AA: Thrust ← &nbsp;|&nbsp; Space: Bomb &nbsp;|&nbsp; F: Gun &nbsp;|&nbsp; V: Cam</div>
+
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+
+// Sizing
+canvas.width = 1200;
+canvas.height = 700;
+const W = canvas.width;
+const H = canvas.height;
+
+// World
+const WORLD_W = 1400;
+const GROUND_Y = H - 60;
+const RUNWAY_X = 40;
+const RUNWAY_W = 320;
+const RUNWAY_Y = GROUND_Y;
+
+// Game state
+let game = null;
+
+const keys = {};
+window.addEventListener('keydown', e => { keys[e.key.toLowerCase()] = true; if(e.key === ' ') e.preventDefault(); });
+window.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
+canvas.addEventListener('wheel', e => {
+  if (!game || game.gameOver) return;
+  e.preventDefault();
+  const delta = e.deltaY > 0 ? -0.1 : 0.1;
+  game.zoom = Math.max(0.5, Math.min(3, game.zoom + delta));
+}, { passive: false });
+
+function startGame() {
+  const diff = parseInt(document.getElementById('difficulty').value);
+  const bombCount = Math.max(1, Math.min(50, parseInt(document.getElementById('bombCount').value) || 5));
+  const enemySpeedMult = parseFloat(document.getElementById('enemySpeed').value) || 0.5;
+  const enemySizeMult = parseFloat(document.getElementById('enemySize').value) || 0.6;
+  const spawnRate = parseInt(document.getElementById('spawnRate').value) || 120;
+  document.getElementById('menu').style.display = 'none';
+  document.getElementById('hud').style.display = 'block';
+
+  game = {
+    diff,
+    bombMax: bombCount,
+    bombs: bombCount,
+    enemySpeedMult,
+    enemySizeMult,
+    spawnRateOverride: spawnRate,
+    score: 0,
+    planeHP: 100,
+    planeMaxHP: 100,
+    airportHP: 200,
+    airportMaxHP: 200,
+    plane: {
+      x: RUNWAY_X + 60,
+      y: RUNWAY_Y - 12,
+      vx: 0,
+      vy: 0,
+      angle: 0, // radians, 0 = right
+      thrusterAngle: 0, // 0 = backward (forward thrust), -PI/2 = downward (upward thrust)
+      speed: 0,
+      airborne: false,
+      onRunway: true,
+      facingRight: true,
+      width: 48,
+      height: 16,
+    },
+    bombList: [],
+    explosions: [],
+    enemies: [],
+    enemyBullets: [],
+    spawnTimer: 0,
+    spawnInterval: spawnRate,
+    followCam: true,
+    camX: 0,
+    gameOver: false,
+    gameOverReason: '',
+    bombCooldown: 0,
+    gunBullets: [],
+    gunCooldown: 0,
+    zoom: 1,
+  };
+
+  requestAnimationFrame(loop);
+}
+
+function loop() {
+  if (!game) return;
+  update();
+  render();
+  if (!game.gameOver) requestAnimationFrame(loop);
+}
+
+function update() {
+  const g = game;
+  const p = g.plane;
+  const dt = 1; // fixed timestep per frame
+
+  // Physics constants — tuned for a light prop plane feel
+  const GRAVITY = 0.035;
+  const THRUST = 0.06;
+  const TURN_SPEED = 0.03;
+  const MAX_SPEED = 3.5;
+  const MIN_FLY_SPEED = 1.0;
+  const DRAG = 0.992;
+  const LAND_MAX_SPEED = 1.8;
+  const LAND_MAX_VY = 1.5;
+
+  // Controls
+  if (keys['v'] && !keys['_v_prev']) {
+    g.followCam = !g.followCam;
+  }
+  keys['_v_prev'] = keys['v'];
+
+  if (!g.gameOver) {
+    // W - pitch up
+    if (keys['w']) {
+      p.angle -= TURN_SPEED;
+    }
+    // S - pitch down
+    if (keys['s']) {
+      p.angle += TURN_SPEED;
+    }
+    // Q/E - rotate thruster nozzle
+    const NOZZLE_SPEED = 0.05;
+    if (keys['q']) {
+      p.thrusterAngle -= NOZZLE_SPEED; // rotate toward upward thrust
+    }
+    if (keys['e']) {
+      p.thrusterAngle += NOZZLE_SPEED; // rotate toward forward thrust
+    }
+    // Clamp nozzle: -PI/2 (full down = hover) to 0 (full back = forward flight)
+    p.thrusterAngle = Math.max(-Math.PI / 2, Math.min(0, p.thrusterAngle));
+
+    // D = face right / double-tap = thrust right
+    // A = face left / double-tap = thrust left
+    const now = Date.now();
+    if (keys['d'] && !keys['_d_prev']) {
+      if (now - (p._dLastTap || 0) < 300) {
+        p._dThrusting = true; // double-tap detected
+      }
+      p._dLastTap = now;
+      p.facingRight = true;
+    }
+    if (!keys['d']) p._dThrusting = false;
+    keys['_d_prev'] = keys['d'];
+
+    if (keys['a'] && !keys['_a_prev']) {
+      if (now - (p._aLastTap || 0) < 300) {
+        p._aThrusting = true; // double-tap detected
+      }
+      p._aLastTap = now;
+      p.facingRight = false;
+    }
+    if (!keys['a']) p._aThrusting = false;
+    keys['_a_prev'] = keys['a'];
+
+    // Apply thrust when holding after double-tap
+    if (keys['d'] && p._dThrusting) {
+      const thrustDir = p.angle + p.thrusterAngle;
+      p.vx += Math.cos(thrustDir) * THRUST;
+      p.vy += Math.sin(thrustDir) * THRUST;
+    }
+    if (keys['a'] && p._aThrusting) {
+      const thrustDir = p.angle + p.thrusterAngle;
+      p.vx -= Math.cos(thrustDir) * THRUST;
+      p.vy += Math.sin(thrustDir) * THRUST;
+    }
+
+    // Clamp angle — allow more range for loops/steep dives
+    p.angle = Math.max(-Math.PI * 0.5, Math.min(Math.PI * 0.5, p.angle));
+
+    // Drag — air resistance slows you down gently
+    p.vx *= DRAG;
+
+    // Clamp horizontal speed
+    p.vx = Math.max(-MAX_SPEED, Math.min(MAX_SPEED, p.vx));
+
+    // Track speed for landing checks (facingRight only changed by X key)
+    p.speed = Math.sqrt(p.vx * p.vx + p.vy * p.vy);
+
+    // Flight physics (airborne only)
+    if (p.airborne) {
+      const hSpeed = Math.abs(p.vx);
+
+      // Lift — wings generate upward force from speed (no upward thrust)
+      // At cruising speed (~2.0+), lift fully cancels gravity and you glide level
+      // Faster = more lift = can climb without even pitching up
+      const liftForce = (hSpeed * hSpeed) * 0.015;
+
+      // Pitch just tilts the direction of travel — like real control surfaces
+      const pitchForce = Math.sin(p.angle) * hSpeed * 0.05;
+
+      // Net: gravity pulls down, wing lift pushes up, pitch steers
+      p.vy += GRAVITY - Math.min(liftForce, GRAVITY * 2.0) + pitchForce;
+
+      // Smooth damping — floaty glide feel
+      p.vy *= 0.94;
+
+      // Angle slowly returns toward level when not pressing W/S (stability)
+      if (!keys['w'] && !keys['s']) {
+        p.angle *= 0.96;
+      }
+    }
+
+    // Move
+    p.x += p.vx;
+    p.y += p.vy;
+
+    // World bounds (invisible walls)
+    if (p.x < 10) { p.x = 10; p.vx = 0; p.speed = Math.abs(p.speed) * 0.5; }
+    if (p.x > WORLD_W - 10) { p.x = WORLD_W - 10; p.vx = 0; p.speed = -Math.abs(p.speed) * 0.5; }
+    if (p.y < 10) { p.y = 10; p.vy = 0; }
+
+    // Ground collision
+    if (p.y >= RUNWAY_Y - 12) {
+      // Check if on runway
+      const onRunway = p.x >= RUNWAY_X && p.x <= RUNWAY_X + RUNWAY_W;
+
+      if (onRunway) {
+        if (p.airborne) {
+          // Returning to land — check landing safety
+          if (Math.abs(p.vx) > LAND_MAX_SPEED || p.vy > LAND_MAX_VY || Math.abs(p.angle) > 0.35) {
+            endGame('Crash landing! Too fast or too steep.');
+            return;
+          }
+          // Successful landing
+          p.airborne = false;
+          p.onRunway = true;
+          g.bombs = g.bombMax; // reload
+        }
+
+        // On the ground: clamp to runway surface
+        p.y = RUNWAY_Y - 12;
+        p.vy = 0;
+        p.onRunway = true;
+
+        // While grounded, W launches when fast enough
+        if (keys['w'] && Math.abs(p.vx) > MIN_FLY_SPEED) {
+          p.airborne = true;
+          p.onRunway = false;
+          p.vy = -1.5; // gentle upward kick
+          p.angle = -0.25; // nose up
+        } else {
+          p.angle = 0; // keep level while taxiing
+        }
+      } else {
+        // Hit ground outside runway = crash
+        if (p.y >= GROUND_Y - 12) {
+          endGame('Crashed into the ground!');
+          return;
+        }
+      }
+    } else if (!p.airborne) {
+      // Just left the ground (flew off runway edge)
+      p.airborne = true;
+      p.onRunway = false;
+    }
+
+    // Drop bomb
+    if (keys[' '] && g.bombCooldown <= 0 && g.bombs > 0 && p.airborne) {
+      g.bombs--;
+      g.bombCooldown = 15;
+      g.bombList.push({
+        x: p.x,
+        y: p.y + 10,
+        vx: p.vx,
+        vy: p.vy + 0.5,
+      });
+    }
+    if (g.bombCooldown > 0) g.bombCooldown--;
+
+    // Machine gun (F key)
+    if (keys['f'] && g.gunCooldown <= 0) {
+      g.gunCooldown = 6; // fast fire rate
+      const bulletSpeed = 7;
+      const dir = p.facingRight ? 1 : -1;
+      g.gunBullets.push({
+        x: p.x + Math.cos(p.angle) * 26 * dir,
+        y: p.y + Math.sin(p.angle) * 26,
+        vx: Math.cos(p.angle) * bulletSpeed * dir + p.vx * 0.3,
+        vy: Math.sin(p.angle) * bulletSpeed + p.vy * 0.3,
+        life: 60,
+      });
+    }
+    if (g.gunCooldown > 0) g.gunCooldown--;
+  }
+
+  // Update gun bullets
+  for (let i = g.gunBullets.length - 1; i >= 0; i--) {
+    const b = g.gunBullets[i];
+    b.x += b.vx;
+    b.y += b.vy;
+    b.life--;
+    if (b.life <= 0 || b.y > GROUND_Y || b.y < 0 || b.x < 0 || b.x > WORLD_W) {
+      g.gunBullets.splice(i, 1);
+      continue;
+    }
+    // Hit enemies
+    for (let j = g.enemies.length - 1; j >= 0; j--) {
+      const e = g.enemies[j];
+      const dx = Math.abs(b.x - e.x);
+      const dy = Math.abs(b.y - e.y);
+      if (dx < 8 && dy < 20) {
+        e.gunHits = (e.gunHits || 0) + 1;
+        g.gunBullets.splice(i, 1);
+        if (e.gunHits >= 3) { // 3 bullet hits = 1 HP lost
+          e.hp--;
+          e.gunHits = 0;
+        }
+        if (e.hp <= 0) {
+          g.enemies.splice(j, 1);
+          g.score += g.diff * 5;
+        }
+        break;
+      }
+    }
+  }
+
+  // Update bombs
+  for (let i = g.bombList.length - 1; i >= 0; i--) {
+    const b = g.bombList[i];
+    b.vy += 0.2;
+    b.x += b.vx;
+    b.y += b.vy;
+    if (b.y >= GROUND_Y) {
+      // Explode with particle effect
+      const blastR = g.diff === 1 ? 50 : g.diff === 2 ? 35 : 28;
+      const pushR = blastR * 3; // displacement radius
+      const particles = [];
+      for (let k = 0; k < 25; k++) {
+        const angle = Math.random() * Math.PI * 2;
+        const speed = 1 + Math.random() * 3.5;
+        particles.push({
+          x: 0, y: 0,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed - Math.random() * 2.5,
+          size: 1.5 + Math.random() * 4,
+          life: 25 + Math.random() * 50,
+          maxLife: 25 + Math.random() * 50,
+          type: Math.random() < 0.3 ? 'debris' : 'fire',
+        });
+      }
+      g.explosions.push({
+        x: b.x, y: GROUND_Y, r: blastR, maxR: blastR, life: 60,
+        particles, flash: 1, shockwave: 0,
+      });
+
+      // Check enemy hits (kill) and displacement (push)
+      for (let j = g.enemies.length - 1; j >= 0; j--) {
+        const e = g.enemies[j];
+        const dx = e.x - b.x;
+        const dist = Math.abs(dx);
+
+        if (dist < blastR) {
+          // Direct hit
+          e.hp--;
+          if (e.hp <= 0) {
+            g.enemies.splice(j, 1);
+            g.score += g.diff * 10;
+            continue;
+          }
+        }
+
+        if (dist < pushR && dist > 0) {
+          // Displacement — push away from blast
+          const pushForce = (1 - dist / pushR) * 8;
+          const dir = dx > 0 ? 1 : -1;
+          e.pushVx = (e.pushVx || 0) + dir * pushForce;
+          e.pushVy = (e.pushVy || 0) - pushForce * 0.6; // launch upward too
+          e.airborne = true;
+        }
+      }
+      g.bombList.splice(i, 1);
+    }
+  }
+
+  // Update explosions
+  for (let i = g.explosions.length - 1; i >= 0; i--) {
+    const ex = g.explosions[i];
+    ex.life--;
+    ex.flash = (ex.flash || 0) * 0.85;
+    ex.shockwave = (ex.shockwave || 0) + 3;
+    // Update particles
+    if (ex.particles) {
+      for (const pt of ex.particles) {
+        pt.x += pt.vx;
+        pt.y += pt.vy;
+        pt.vy += 0.06;
+        pt.vx *= 0.97;
+        pt.life--;
+      }
+      ex.particles = ex.particles.filter(pt => pt.life > 0);
+    }
+    if (ex.life <= 0) g.explosions.splice(i, 1);
+  }
+
+  // Update enemy displacement physics
+  for (const e of g.enemies) {
+    if (e.pushVx || e.pushVy) {
+      e.x += e.pushVx || 0;
+      e.y += (e.pushVy || 0);
+      e.pushVx = (e.pushVx || 0) * 0.9;
+      e.pushVy = (e.pushVy || 0) + 0.3; // gravity pulls them back
+      // Land back on ground
+      if (e.y >= GROUND_Y) {
+        e.y = GROUND_Y;
+        e.pushVy = 0;
+        e.pushVx = (e.pushVx || 0) * 0.5;
+        e.airborne = false;
+        if (Math.abs(e.pushVx) < 0.1) e.pushVx = 0;
+      }
+    }
+  }
+
+  // Spawn enemies
+  g.spawnTimer++;
+  if (g.spawnTimer >= g.spawnInterval) {
+    g.spawnTimer = 0;
+    const hp = g.diff === 1 ? 1 : g.diff === 2 ? 2 : 3;
+    const baseSpd = g.diff === 1 ? (0.2 + Math.random() * 0.25) : g.diff === 2 ? (0.35 + Math.random() * 0.3) : (0.45 + Math.random() * 0.35);
+    const spd = baseSpd * g.enemySpeedMult;
+    g.enemies.push({
+      x: WORLD_W - 60 + Math.random() * 30,
+      y: GROUND_Y,
+      speed: spd,
+      hp: hp,
+      maxHP: hp,
+      attackTimer: 0,
+      shootTimer: Math.random() * 200,
+      animFrame: 0,
+    });
+  }
+
+  // Update enemies
+  const AIRPORT_X = RUNWAY_X + RUNWAY_W + 30; // the structure to the right of runway
+  const AIRPORT_LEFT = RUNWAY_X;
+  for (let i = g.enemies.length - 1; i >= 0; i--) {
+    const e = g.enemies[i];
+    e.x -= e.speed;
+    e.animFrame += e.speed * 0.1;
+
+    // Attack airport structure (tower is at RUNWAY_X + 20, width ~70)
+    if (e.x <= RUNWAY_X + 90) {
+      e.attackTimer++;
+      e.x = Math.max(RUNWAY_X + 20, e.x); // cluster around the building
+      if (e.attackTimer % 20 === 0) {
+        g.airportHP -= 2;
+        if (g.airportHP <= 0) {
+          endGame('The airport was destroyed!');
+          return;
+        }
+      }
+    }
+
+    // Stick figures on the runway get killed if plane lands on them
+    if (!p.airborne && p.onRunway) {
+      const dx = Math.abs(e.x - p.x);
+      if (dx < 30 && e.y >= GROUND_Y - 5) {
+        e.hp = 0;
+        g.enemies.splice(i, 1);
+        g.score += 5;
+        continue;
+      }
+    }
+
+    // Level 3: shoot at plane
+    if (g.diff >= 3) {
+      e.shootTimer--;
+      if (e.shootTimer <= 0) {
+        e.shootTimer = 150 + Math.random() * 200;
+        const dx = p.x - e.x;
+        const dy = p.y - e.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < 500) {
+          const bspeed = 3;
+          g.enemyBullets.push({
+            x: e.x,
+            y: e.y - 20,
+            vx: (dx / dist) * bspeed,
+            vy: (dy / dist) * bspeed,
+            life: 120,
+          });
+        }
+      }
+    }
+  }
+
+  // Update enemy bullets
+  for (let i = g.enemyBullets.length - 1; i >= 0; i--) {
+    const b = g.enemyBullets[i];
+    b.x += b.vx;
+    b.y += b.vy;
+    b.life--;
+    if (b.life <= 0 || b.y > GROUND_Y || b.y < 0) {
+      g.enemyBullets.splice(i, 1);
+      continue;
+    }
+    // Hit plane?
+    const dx = b.x - p.x;
+    const dy = b.y - p.y;
+    if (Math.abs(dx) < 24 && Math.abs(dy) < 12) {
+      g.planeHP -= 8;
+      g.enemyBullets.splice(i, 1);
+      if (g.planeHP <= 0) {
+        endGame('Your plane was shot down!');
+        return;
+      }
+    }
+  }
+
+  // Update HUD
+  document.getElementById('scoreVal').textContent = g.score;
+  document.getElementById('bombVal').textContent = g.bombs + ' / ' + g.bombMax;
+  document.getElementById('reloadMsg').style.display = g.bombs === 0 ? 'inline' : 'none';
+  document.getElementById('zoomVal').textContent = g.zoom.toFixed(1) + 'x';
+  document.getElementById('nozzleVal').textContent = Math.round(p.thrusterAngle * -180 / Math.PI) + '°';
+  document.getElementById('planeHPBar').style.width = Math.max(0, g.planeHP / g.planeMaxHP * 100) + '%';
+  document.getElementById('planeHPBar').style.background = g.planeHP > 50 ? '#4f4' : g.planeHP > 25 ? '#fa0' : '#f44';
+  document.getElementById('airportHPBar').style.width = Math.max(0, g.airportHP / g.airportMaxHP * 100) + '%';
+  document.getElementById('airportHPBar').style.background = g.airportHP > 100 ? '#48f' : g.airportHP > 50 ? '#fa0' : '#f44';
+
+  // Camera
+  if (g.followCam) {
+    g.camX = p.x - W / 3;
+    g.camX = Math.max(0, Math.min(WORLD_W - W, g.camX));
+  } else {
+    g.camX = 0;
+  }
+}
+
+function render() {
+  const g = game;
+  const p = g.plane;
+  const cx = g.camX;
+  const zoom = g.zoom || 1;
+
+  // Clear entire canvas first (prevents zoom artifacts)
+  ctx.clearRect(0, 0, W, H);
+
+  // Apply zoom centered on canvas center
+  ctx.save();
+  const centerX = W / 2;
+  const centerY = H / 2;
+  ctx.translate(centerX, centerY);
+  ctx.scale(zoom, zoom);
+  ctx.translate(-centerX, -centerY);
+
+  // Sky gradient (oversized to cover zoomed view)
+  const pad = W; // extra padding for zoom
+  const sky = ctx.createLinearGradient(0, -pad, 0, H + pad);
+  sky.addColorStop(0, '#1a2a4a');
+  sky.addColorStop(0.7, '#3a6090');
+  sky.addColorStop(1, '#6a9fd8');
+  ctx.fillStyle = sky;
+  ctx.fillRect(-pad, -pad, W + pad * 2, H + pad * 2);
+
+  // Clouds
+  ctx.fillStyle = 'rgba(255,255,255,0.15)';
+  for (let i = 0; i < 8; i++) {
+    const cloudX = (i * 300 + 100) - cx * 0.3;
+    ctx.beginPath();
+    ctx.arc(cloudX, 80 + (i % 3) * 50, 40, 0, Math.PI * 2);
+    ctx.arc(cloudX + 35, 75 + (i % 3) * 50, 30, 0, Math.PI * 2);
+    ctx.arc(cloudX - 30, 85 + (i % 3) * 50, 25, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Ground (extend full world width + extra for zoom)
+  ctx.fillStyle = '#3a5a2a';
+  ctx.fillRect(-W - cx, GROUND_Y, WORLD_W + W * 3, H);
+
+  // Underground layer
+  ctx.fillStyle = '#2a4a1a';
+  ctx.fillRect(-W - cx, GROUND_Y + 20, WORLD_W + W * 3, H);
+
+  // Runway
+  ctx.fillStyle = '#555';
+  ctx.fillRect(RUNWAY_X - cx, GROUND_Y - 4, RUNWAY_W, 8);
+  // Runway markings
+  ctx.fillStyle = '#fff';
+  for (let i = 0; i < 8; i++) {
+    ctx.fillRect(RUNWAY_X + 15 + i * 38 - cx, GROUND_Y - 1, 20, 2);
+  }
+
+  // Airport structure (control tower)
+  const towerX = RUNWAY_X + 20 - cx;
+  const towerW = 40;
+  const towerH = 80;
+  // Building base
+  ctx.fillStyle = '#888';
+  ctx.fillRect(towerX - 15, GROUND_Y - 40, 70, 40);
+  // Tower
+  ctx.fillStyle = '#aaa';
+  ctx.fillRect(towerX, GROUND_Y - towerH - 40, towerW, towerH);
+  // Tower top (control room)
+  ctx.fillStyle = '#66aacc';
+  ctx.fillRect(towerX - 8, GROUND_Y - towerH - 55, towerW + 16, 20);
+  // Windows
+  ctx.fillStyle = '#aaddf8';
+  for (let i = 0; i < 3; i++) {
+    ctx.fillRect(towerX + 5 + i * 12, GROUND_Y - towerH - 50, 8, 10);
+  }
+  // Damage overlay
+  if (g.airportHP < g.airportMaxHP) {
+    const dmg = 1 - g.airportHP / g.airportMaxHP;
+    ctx.fillStyle = `rgba(80,30,0,${dmg * 0.5})`;
+    ctx.fillRect(towerX - 15, GROUND_Y - towerH - 55, 70, towerH + 55);
+    // Cracks
+    if (dmg > 0.3) {
+      ctx.strokeStyle = '#333';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(towerX + 10, GROUND_Y - 60);
+      ctx.lineTo(towerX + 25, GROUND_Y - 90);
+      ctx.lineTo(towerX + 15, GROUND_Y - 110);
+      ctx.stroke();
+    }
+  }
+
+  // Cave (enemy spawn point) at right side of world
+  const caveX = WORLD_W - 60 - cx;
+  const caveW = 70;
+  const caveH = 50;
+  // Hill / mound around the cave
+  ctx.fillStyle = '#4a3a2a';
+  ctx.beginPath();
+  ctx.moveTo(caveX - 50, GROUND_Y);
+  ctx.quadraticCurveTo(caveX - 20, GROUND_Y - 70, caveX + caveW / 2, GROUND_Y - 65);
+  ctx.quadraticCurveTo(caveX + caveW + 20, GROUND_Y - 70, caveX + caveW + 50, GROUND_Y);
+  ctx.closePath();
+  ctx.fill();
+  // Cave opening (dark hole)
+  ctx.fillStyle = '#111';
+  ctx.beginPath();
+  ctx.ellipse(caveX + caveW / 2, GROUND_Y - 5, caveW / 2, caveH / 2, 0, Math.PI, 0);
+  ctx.fill();
+  // Cave depth shading
+  ctx.fillStyle = '#1a1a1a';
+  ctx.beginPath();
+  ctx.ellipse(caveX + caveW / 2, GROUND_Y - 3, caveW / 2 - 5, caveH / 2 - 8, 0, Math.PI, 0);
+  ctx.fill();
+  // Rocks around entrance
+  ctx.fillStyle = '#5a4a3a';
+  ctx.beginPath();
+  ctx.arc(caveX - 5, GROUND_Y - 8, 8, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(caveX + caveW + 5, GROUND_Y - 6, 7, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(caveX + caveW / 2, GROUND_Y - caveH + 5, 6, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Enemies (stick figures)
+  const viewMargin = W / zoom + 100;
+  for (const e of g.enemies) {
+    const ex = e.x - cx;
+    const ey = e.y;
+    if (ex < -viewMargin || ex > viewMargin * 2) continue;
+
+    const legSwing = Math.sin(e.animFrame * 3) * 10;
+    const armSwing = Math.sin(e.animFrame * 3 + 1) * 8;
+
+    // Color by HP
+    const hpRatio = e.hp / e.maxHP;
+    ctx.strokeStyle = hpRatio > 0.6 ? '#eee' : hpRatio > 0.3 ? '#fa0' : '#f44';
+    ctx.lineWidth = 2;
+
+    // Draw stick figure at configurable scale
+    const s = g.enemySizeMult;
+    ctx.lineWidth = 1.5;
+
+    // Head (sits on top of body)
+    ctx.beginPath();
+    ctx.arc(ex, ey - 21 * s, 3 * s, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Body
+    ctx.beginPath();
+    ctx.moveTo(ex, ey - 18 * s);
+    ctx.lineTo(ex, ey - 8 * s);
+    ctx.stroke();
+
+    // Legs
+    ctx.beginPath();
+    ctx.moveTo(ex, ey - 8 * s);
+    ctx.lineTo(ex - 4 * s + legSwing * 0.3, ey);
+    ctx.moveTo(ex, ey - 8 * s);
+    ctx.lineTo(ex + 4 * s - legSwing * 0.3, ey);
+    ctx.stroke();
+
+    // Arms + axe
+    ctx.beginPath();
+    ctx.moveTo(ex, ey - 15 * s);
+    ctx.lineTo(ex - 6 * s - armSwing * 0.2, ey - 10 * s);
+    ctx.stroke();
+
+    // Axe arm
+    ctx.beginPath();
+    ctx.moveTo(ex, ey - 15 * s);
+    const axeX = ex - 8 * s + armSwing * 0.2;
+    const axeY = ey - 14 * s;
+    ctx.lineTo(axeX, axeY);
+    ctx.stroke();
+
+    // Axe head
+    ctx.fillStyle = '#999';
+    ctx.fillRect(axeX - 2, axeY - 3, 4, 5);
+
+    // HP bar for tough enemies
+    if (e.maxHP > 1) {
+      ctx.fillStyle = '#400';
+      ctx.fillRect(ex - 7, ey - 24 * s, 14, 2);
+      ctx.fillStyle = '#f44';
+      ctx.fillRect(ex - 7, ey - 24 * s, 14 * (e.hp / e.maxHP), 2);
+    }
+  }
+
+  // Bombs
+  ctx.fillStyle = '#333';
+  for (const b of g.bombList) {
+    const bx = b.x - cx;
+    ctx.beginPath();
+    ctx.ellipse(bx, b.y, 4, 6, Math.atan2(b.vy, b.vx) + Math.PI / 2, 0, Math.PI * 2);
+    ctx.fill();
+    // Fins
+    ctx.strokeStyle = '#555';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(bx - 3, b.y - 5);
+    ctx.lineTo(bx, b.y - 2);
+    ctx.lineTo(bx + 3, b.y - 5);
+    ctx.stroke();
+  }
+
+  // Explosions
+  for (const ex of g.explosions) {
+    const exx = ex.x - cx;
+    const alpha = Math.min(1, ex.life / 30);
+
+    // White flash on impact
+    if (ex.flash > 0.1) {
+      ctx.fillStyle = `rgba(255,255,220,${ex.flash * 0.4})`;
+      ctx.beginPath();
+      ctx.arc(exx, ex.y, ex.maxR * 1.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Shockwave ring (expanding, fading)
+    if (ex.shockwave < ex.maxR * 3) {
+      const ringAlpha = Math.max(0, 0.4 * (1 - ex.shockwave / (ex.maxR * 3)));
+      ctx.strokeStyle = `rgba(255,200,100,${ringAlpha})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(exx, ex.y, ex.shockwave, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    // Fire ball (shrinks over time)
+    const fireR = ex.maxR * alpha;
+    ctx.beginPath();
+    ctx.arc(exx, ex.y - 5, fireR, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255,80,0,${alpha * 0.6})`;
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(exx, ex.y - 8, fireR * 0.6, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255,180,0,${alpha * 0.7})`;
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(exx, ex.y - 10, fireR * 0.3, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255,255,150,${alpha * 0.8})`;
+    ctx.fill();
+
+    // Particles (fire + debris)
+    if (ex.particles) {
+      for (const pt of ex.particles) {
+        const pa = pt.life / pt.maxLife;
+        const px = exx + pt.x;
+        const py = ex.y + pt.y;
+        if (pt.type === 'fire') {
+          const r = 255;
+          const g = Math.floor(100 + 150 * pa);
+          const b = Math.floor(50 * pa);
+          ctx.fillStyle = `rgba(${r},${g},${b},${pa})`;
+          ctx.beginPath();
+          ctx.arc(px, py, pt.size * pa, 0, Math.PI * 2);
+          ctx.fill();
+        } else {
+          ctx.fillStyle = `rgba(60,50,40,${pa})`;
+          ctx.fillRect(px - pt.size / 2, py - pt.size / 2, pt.size, pt.size);
+        }
+      }
+    }
+
+    // Smoke (rises after initial blast)
+    if (ex.life < 40) {
+      const smokeAlpha = Math.min(0.35, (40 - ex.life) / 60);
+      for (let i = 0; i < 2; i++) {
+        const sy = ex.y - 15 - (40 - ex.life) * 0.7 - i * 10;
+        const sx = exx + Math.sin(ex.life * 0.15 + i) * 5;
+        ctx.fillStyle = `rgba(80,80,80,${smokeAlpha * (1 - i * 0.3)})`;
+        ctx.beginPath();
+        ctx.arc(sx, sy, 6 + i * 4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  }
+
+  // Player gun bullets (yellow tracers)
+  for (const b of g.gunBullets) {
+    const bx = b.x - cx;
+    ctx.strokeStyle = '#ff0';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(bx, b.y);
+    ctx.lineTo(bx - b.vx * 2, b.y - b.vy * 2);
+    ctx.stroke();
+    ctx.fillStyle = '#ffa';
+    ctx.beginPath();
+    ctx.arc(bx, b.y, 1.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Enemy bullets
+  ctx.fillStyle = '#f44';
+  for (const b of g.enemyBullets) {
+    ctx.beginPath();
+    ctx.arc(b.x - cx, b.y, 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Plane (hide if crashed)
+  if (g.gameOver) return;
+  const px = p.x - cx;
+  const py = p.y;
+  ctx.save();
+  ctx.translate(px, py);
+  if (!p.facingRight) {
+    ctx.scale(-1, 1);
+  }
+  ctx.rotate(p.angle);
+
+  // Fuselage
+  ctx.fillStyle = '#ddd';
+  ctx.beginPath();
+  ctx.moveTo(24, 0);
+  ctx.lineTo(-20, -5);
+  ctx.lineTo(-24, -3);
+  ctx.lineTo(-24, 3);
+  ctx.lineTo(-20, 5);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = '#999';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // Wings
+  ctx.fillStyle = '#bbb';
+  ctx.beginPath();
+  ctx.moveTo(-2, -2);
+  ctx.lineTo(4, -14);
+  ctx.lineTo(10, -14);
+  ctx.lineTo(6, -2);
+  ctx.closePath();
+  ctx.fill();
+  ctx.beginPath();
+  ctx.moveTo(-2, 2);
+  ctx.lineTo(4, 14);
+  ctx.lineTo(10, 14);
+  ctx.lineTo(6, 2);
+  ctx.closePath();
+  ctx.fill();
+
+  // Tail
+  ctx.fillStyle = '#aaa';
+  ctx.beginPath();
+  ctx.moveTo(-20, -3);
+  ctx.lineTo(-26, -10);
+  ctx.lineTo(-18, -10);
+  ctx.lineTo(-16, -3);
+  ctx.closePath();
+  ctx.fill();
+
+  // Cockpit
+  ctx.fillStyle = '#6af';
+  ctx.beginPath();
+  ctx.ellipse(14, 0, 6, 3, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Propeller hint
+  ctx.strokeStyle = '#666';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(24, -6);
+  ctx.lineTo(25, 6);
+  ctx.stroke();
+
+  // Thruster nozzle visual (small rectangle that rotates)
+  ctx.save();
+  ctx.translate(-22, 0);
+  ctx.rotate(p.thrusterAngle);
+  ctx.fillStyle = '#666';
+  ctx.fillRect(-4, -3, 6, 6);
+  // Rocket boost fire when thrusting (double-tap D or A)
+  if ((keys['d'] && p._dThrusting) || (keys['a'] && p._aThrusting)) {
+    const flicker = Math.random() * 8;
+    // Outer flame (orange/red) — shoots out opposite of nozzle direction
+    ctx.fillStyle = `rgba(255,${100 + Math.random() * 80},0,0.8)`;
+    ctx.beginPath();
+    ctx.moveTo(-4, -3);
+    ctx.lineTo(-14 - flicker, 0);
+    ctx.lineTo(-4, 3);
+    ctx.closePath();
+    ctx.fill();
+    // Inner flame (yellow/white)
+    ctx.fillStyle = `rgba(255,255,${150 + Math.random() * 100},0.9)`;
+    ctx.beginPath();
+    ctx.moveTo(-4, -1.5);
+    ctx.lineTo(-9 - flicker * 0.5, 0);
+    ctx.lineTo(-4, 1.5);
+    ctx.closePath();
+    ctx.fill();
+    // Glow
+    ctx.fillStyle = 'rgba(255,150,0,0.2)';
+    ctx.beginPath();
+    ctx.arc(-6, 0, 6 + flicker * 0.4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+
+  // Nozzle angle indicator (small arc showing current angle)
+  ctx.strokeStyle = 'rgba(255,200,0,0.4)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.arc(-22, 0, 10, Math.PI + p.thrusterAngle - 0.1, Math.PI + p.thrusterAngle + 0.1);
+  ctx.stroke();
+
+  // Machine gun muzzle flash
+  if (g.gunCooldown > 3) {
+    ctx.fillStyle = `rgba(255,255,100,${0.8})`;
+    ctx.beginPath();
+    ctx.arc(27, 0, 3 + Math.random() * 2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.restore();
+
+  // Plane damage visual
+  if (g.planeHP < g.planeMaxHP * 0.5) {
+    // Smoke trail
+    ctx.fillStyle = `rgba(100,100,100,${0.3 * (1 - g.planeHP / g.planeMaxHP)})`;
+    for (let i = 0; i < 3; i++) {
+      ctx.beginPath();
+      ctx.arc(px - 20 - i * 12 + Math.random() * 6, py + Math.random() * 8, 4 + Math.random() * 4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // Landing indicator when near runway
+  if (p.airborne && p.y > GROUND_Y - 120 && p.x >= RUNWAY_X && p.x <= RUNWAY_X + RUNWAY_W) {
+    const speedOk = Math.abs(p.vx) <= 3;
+    const vyOk = p.vy <= 2.5;
+    const angleOk = Math.abs(p.angle) <= 0.35;
+    const color = (speedOk && vyOk && angleOk) ? '#4f4' : '#f44';
+    ctx.fillStyle = color;
+    ctx.font = '12px monospace';
+    ctx.fillText(speedOk ? '✓ SPD' : '✗ SPD', px - 40, py - 25);
+    ctx.fillText(vyOk ? '✓ VSI' : '✗ VSI', px - 40, py - 38);
+    ctx.fillText(angleOk ? '✓ ANG' : '✗ ANG', px - 40, py - 51);
+  }
+
+  // Close zoom transform
+  ctx.restore();
+}
+
+function endGame(reason) {
+  game.gameOver = true;
+  game.gameOverReason = reason;
+
+  // Spawn crash explosion at plane position
+  game.crashExplosion = {
+    x: game.plane.x,
+    y: game.plane.y,
+    particles: [],
+    life: 120, // 2 seconds at 60fps
+    flash: 1,
+  };
+  // Generate debris and fire particles
+  for (let i = 0; i < 40; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 1 + Math.random() * 4;
+    game.crashExplosion.particles.push({
+      x: 0, y: 0,
+      vx: Math.cos(angle) * speed + game.plane.vx * 0.3,
+      vy: Math.sin(angle) * speed - Math.random() * 2,
+      size: 2 + Math.random() * 5,
+      life: 40 + Math.random() * 80,
+      maxLife: 40 + Math.random() * 80,
+      type: Math.random() < 0.4 ? 'debris' : 'fire',
+    });
+  }
+
+  // Delay the game over screen to show the explosion
+  setTimeout(() => {
+    document.getElementById('gameOverScreen').style.display = 'block';
+    document.getElementById('gameOverReason').textContent = reason;
+    document.getElementById('finalScore').textContent = game.score;
+  }, 2000);
+
+  // Keep rendering the explosion
+  requestAnimationFrame(crashLoop);
+}
+
+function crashLoop() {
+  if (!game || !game.crashExplosion) return;
+  const ce = game.crashExplosion;
+  ce.life--;
+  ce.flash *= 0.9;
+
+  // Update particles
+  for (const p of ce.particles) {
+    p.x += p.vx;
+    p.y += p.vy;
+    p.vy += 0.05; // gravity on debris
+    p.vx *= 0.98;
+    p.life--;
+  }
+  ce.particles = ce.particles.filter(p => p.life > 0);
+
+  // Render
+  render();
+
+  // Draw explosion on top
+  const cx = game.camX;
+  const ex = ce.x - cx;
+  const ey = ce.y;
+
+  // White flash
+  if (ce.flash > 0.1) {
+    ctx.fillStyle = `rgba(255,255,255,${ce.flash * 0.5})`;
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  // Fire ball (fades over time)
+  const fireAlpha = Math.min(1, ce.life / 60);
+  const fireR = 30 + (120 - ce.life) * 0.3;
+  ctx.beginPath();
+  ctx.arc(ex, ey, fireR, 0, Math.PI * 2);
+  ctx.fillStyle = `rgba(255,80,0,${fireAlpha * 0.3})`;
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(ex, ey, fireR * 0.5, 0, Math.PI * 2);
+  ctx.fillStyle = `rgba(255,160,0,${fireAlpha * 0.4})`;
+  ctx.fill();
+
+  // Particles
+  for (const p of ce.particles) {
+    const alpha = p.life / p.maxLife;
+    const px = ex + p.x;
+    const py = ey + p.y;
+    if (p.type === 'fire') {
+      const r = Math.floor(255);
+      const g = Math.floor(100 + 150 * alpha);
+      const b = Math.floor(50 * alpha);
+      ctx.fillStyle = `rgba(${r},${g},${b},${alpha})`;
+      ctx.beginPath();
+      ctx.arc(px, py, p.size * alpha, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      // Debris — dark chunks
+      ctx.fillStyle = `rgba(60,60,60,${alpha})`;
+      ctx.fillRect(px - p.size / 2, py - p.size / 2, p.size, p.size);
+    }
+  }
+
+  // Smoke column rising
+  if (ce.life < 100) {
+    const smokeAlpha = Math.min(0.4, (100 - ce.life) / 100);
+    for (let i = 0; i < 3; i++) {
+      const sy = ey - 20 - (100 - ce.life) * 0.8 - i * 15;
+      const sx = ex + Math.sin(ce.life * 0.1 + i) * 8;
+      ctx.fillStyle = `rgba(80,80,80,${smokeAlpha * (1 - i * 0.25)})`;
+      ctx.beginPath();
+      ctx.arc(sx, sy, 10 + i * 5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  if (ce.life > 0) {
+    requestAnimationFrame(crashLoop);
+  }
+}
+</script>
+
+</body>
+</html>

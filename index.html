@@ -8,22 +8,22 @@
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { background: #111; display: flex; justify-content: center; align-items: center; height: 100vh; font-family: 'Segoe UI', sans-serif; overflow: hidden; }
 canvas { display: block; width: 100vw; height: 100vh; }
-#menu { position: absolute; background: rgba(0,0,0,0.92); color: #eee; padding: 30px; border-radius: 12px; text-align: center; width: 90%; max-width: 420px; max-height: 90vh; overflow-y: auto; }
+#menu { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.92); color: #eee; padding: 30px; border-radius: 12px; text-align: center; width: 90%; max-width: 420px; max-height: 90vh; overflow-y: auto; z-index: 200; }
 #menu h1 { font-size: 32px; margin-bottom: 8px; color: #f90; }
 #menu h2 { font-size: 14px; color: #888; margin-bottom: 24px; }
 #menu label { display: block; margin: 12px 0 4px; font-size: 14px; color: #aaa; text-align: left; }
 #menu select, #menu input { width: 100%; padding: 8px; border-radius: 6px; border: 1px solid #555; background: #222; color: #eee; font-size: 14px; }
 #menu button { margin-top: 24px; padding: 12px 40px; font-size: 18px; background: #f90; color: #111; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; }
 #menu button:hover { background: #fa0; }
-#hud { position: absolute; top: 10px; left: 10px; color: #eee; font-size: 13px; pointer-events: none; }
+#hud { position: fixed; top: 10px; left: 10px; color: #eee; font-size: 13px; pointer-events: none; z-index: 100; }
 #hud div { margin: 2px 0; }
 .bar-bg { display: inline-block; width: 120px; height: 12px; background: #333; border-radius: 3px; vertical-align: middle; }
 .bar-fill { height: 100%; border-radius: 3px; transition: width 0.2s; }
-#gameOverScreen { position: absolute; background: rgba(0,0,0,0.88); color: #eee; padding: 40px; border-radius: 12px; text-align: center; display: none; }
+#gameOverScreen { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.88); color: #eee; padding: 40px; border-radius: 12px; text-align: center; display: none; z-index: 300; }
 #gameOverScreen h1 { color: #f44; font-size: 36px; }
 #gameOverScreen p { margin: 12px 0; font-size: 18px; }
 #gameOverScreen button { margin-top: 16px; padding: 10px 32px; font-size: 16px; background: #f90; color: #111; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; }
-#controls { position: absolute; bottom: 10px; left: 10px; color: #666; font-size: 11px; pointer-events: none; }
+#controls { position: fixed; bottom: 10px; left: 10px; color: #666; font-size: 11px; pointer-events: none; z-index: 100; }
 #touchControls { position: fixed; bottom: 0; left: 0; right: 0; height: 200px; pointer-events: none; display: none; z-index: 9000; }
 #touchControls.visible { display: block; }
 #touchToggle { position: fixed; top: 10px; right: 10px; background: #f90; color: #111; border: none; border-radius: 8px; padding: 10px 18px; font-size: 14px; font-weight: bold; cursor: pointer; z-index: 9999; -webkit-tap-highlight-color: transparent; }
@@ -221,6 +221,7 @@ function startGame() {
     gunBullets: [],
     gunCooldown: 0,
     zoom: 1,
+    spawnCount: 0,
   };
 
   requestAnimationFrame(loop);
@@ -498,15 +499,15 @@ function update() {
           // Direct hit
           e.hp--;
           if (e.hp <= 0) {
+            g.score += e.boss ? g.diff * 100 : g.diff * 10;
             g.enemies.splice(j, 1);
-            g.score += g.diff * 10;
             continue;
           }
         }
 
         if (dist < pushR && dist > 0) {
-          // Displacement — push away from blast
-          const pushForce = (1 - dist / pushR) * 8;
+          // Displacement — push away from blast (boss is heavier)
+          const pushForce = (1 - dist / pushR) * (e.boss ? 3 : 8);
           const dir = dx > 0 ? 1 : -1;
           e.pushVx = (e.pushVx || 0) + dir * pushForce;
           e.pushVy = (e.pushVy || 0) - pushForce * 0.6; // launch upward too
@@ -551,6 +552,10 @@ function update() {
         e.pushVx = (e.pushVx || 0) * 0.5;
         e.airborne = false;
         if (Math.abs(e.pushVx) < 0.1) e.pushVx = 0;
+        // Knockdown: lie on ground then get up
+        if (!e.knockdown) {
+          e.knockdown = 60; // frames to stay down
+        }
       }
     }
   }
@@ -559,19 +564,37 @@ function update() {
   g.spawnTimer++;
   if (g.spawnTimer >= g.spawnInterval) {
     g.spawnTimer = 0;
-    const hp = g.diff === 1 ? 1 : g.diff === 2 ? 2 : 3;
-    const baseSpd = g.diff === 1 ? (0.2 + Math.random() * 0.25) : g.diff === 2 ? (0.35 + Math.random() * 0.3) : (0.45 + Math.random() * 0.35);
-    const spd = baseSpd * g.enemySpeedMult;
-    g.enemies.push({
-      x: WORLD_W - 60 + Math.random() * 30,
-      y: GROUND_Y,
-      speed: spd,
-      hp: hp,
-      maxHP: hp,
-      attackTimer: 0,
-      shootTimer: Math.random() * 200,
-      animFrame: 0,
-    });
+    g.spawnCount++;
+
+    // Every 20 spawns, spawn a boss instead
+    if (g.spawnCount % 20 === 0) {
+      const bossHP = g.diff === 1 ? 15 : g.diff === 2 ? 25 : 35;
+      g.enemies.push({
+        x: WORLD_W - 60,
+        y: GROUND_Y,
+        speed: 0.2 + Math.random() * 0.1, // boss has its own fixed speed
+        hp: bossHP,
+        maxHP: bossHP,
+        attackTimer: 0,
+        shootTimer: 50,
+        animFrame: 0,
+        boss: true,
+      });
+    } else {
+      const hp = g.diff === 1 ? 1 : g.diff === 2 ? 2 : 3;
+      const baseSpd = g.diff === 1 ? (0.35 + Math.random() * 0.2) : g.diff === 2 ? (0.45 + Math.random() * 0.25) : (0.55 + Math.random() * 0.3);
+      const spd = baseSpd * g.enemySpeedMult;
+      g.enemies.push({
+        x: WORLD_W - 60 + Math.random() * 30,
+        y: GROUND_Y,
+        speed: spd,
+        hp: hp,
+        maxHP: hp,
+        attackTimer: 0,
+        shootTimer: Math.random() * 200,
+        animFrame: 0,
+      });
+    }
   }
 
   // Update enemies
@@ -579,6 +602,13 @@ function update() {
   const AIRPORT_LEFT = RUNWAY_X;
   for (let i = g.enemies.length - 1; i >= 0; i--) {
     const e = g.enemies[i];
+
+    // Knockdown: frozen on ground, getting up
+    if (e.knockdown > 0) {
+      e.knockdown--;
+      continue; // skip movement, attacking, shooting while knocked down
+    }
+
     e.x -= e.speed;
     e.animFrame += e.speed * 0.1;
 
@@ -587,7 +617,7 @@ function update() {
       e.attackTimer++;
       e.x = Math.max(RUNWAY_X + 20, e.x); // cluster around the building
       if (e.attackTimer % 20 === 0) {
-        g.airportHP -= 2;
+        g.airportHP -= e.boss ? 5 : 2;
         if (g.airportHP <= 0) {
           endGame('The airport was destroyed!');
           return;
@@ -606,23 +636,34 @@ function update() {
       }
     }
 
-    // Level 3: shoot at plane
-    if (g.diff >= 3) {
+    // Shoot at plane (level 3 enemies + all bosses)
+    if (g.diff >= 3 || e.boss) {
       e.shootTimer--;
       if (e.shootTimer <= 0) {
-        e.shootTimer = 150 + Math.random() * 200;
+        e.shootTimer = e.boss ? (60 + Math.random() * 80) : (150 + Math.random() * 200);
         const dx = p.x - e.x;
         const dy = p.y - e.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist < 500) {
-          const bspeed = 3;
+        const shootRange = e.boss ? 800 : 500;
+        if (dist < shootRange) {
+          const bspeed = e.boss ? 4 : 3;
           g.enemyBullets.push({
             x: e.x,
-            y: e.y - 20,
+            y: e.y - (e.boss ? 50 : 20),
             vx: (dx / dist) * bspeed,
             vy: (dy / dist) * bspeed,
-            life: 120,
+            life: 150,
           });
+          // Boss fires a second shot slightly offset
+          if (e.boss) {
+            g.enemyBullets.push({
+              x: e.x + 10,
+              y: e.y - 45,
+              vx: (dx / dist) * bspeed + (Math.random() - 0.5),
+              vy: (dy / dist) * bspeed + (Math.random() - 0.5),
+              life: 150,
+            });
+          }
         }
       }
     }
@@ -794,68 +835,135 @@ function render() {
   ctx.arc(caveX + caveW / 2, GROUND_Y - caveH + 5, 6, 0, Math.PI * 2);
   ctx.fill();
 
-  // Enemies (stick figures)
+  // Enemies (stick figures + bosses)
   const viewMargin = W / zoom + 100;
   for (const e of g.enemies) {
     const ex = e.x - cx;
     const ey = e.y;
     if (ex < -viewMargin || ex > viewMargin * 2) continue;
 
-    const legSwing = Math.sin(e.animFrame * 3) * 10;
-    const armSwing = Math.sin(e.animFrame * 3 + 1) * 8;
-
-    // Color by HP
+    const s = e.boss ? 2.0 : g.enemySizeMult; // boss is big
     const hpRatio = e.hp / e.maxHP;
-    ctx.strokeStyle = hpRatio > 0.6 ? '#eee' : hpRatio > 0.3 ? '#fa0' : '#f44';
-    ctx.lineWidth = 2;
+    const knocked = e.knockdown > 0;
 
-    // Draw stick figure at configurable scale
-    const s = g.enemySizeMult;
-    ctx.lineWidth = 1.5;
+    // Color
+    if (e.boss) {
+      ctx.strokeStyle = hpRatio > 0.6 ? '#f44' : hpRatio > 0.3 ? '#f80' : '#ff0';
+    } else {
+      ctx.strokeStyle = hpRatio > 0.6 ? '#eee' : hpRatio > 0.3 ? '#fa0' : '#f44';
+    }
+    ctx.lineWidth = e.boss ? 3 : 1.5;
 
-    // Head (sits on top of body)
-    ctx.beginPath();
-    ctx.arc(ex, ey - 21 * s, 3 * s, 0, Math.PI * 2);
-    ctx.stroke();
+    if (knocked) {
+      // Knocked down — draw lying flat on ground
+      const getUpProg = 1 - (e.knockdown / 60); // 0 = just fell, 1 = about to get up
+      const tilt = (1 - getUpProg) * Math.PI / 2; // 90° = flat, 0° = standing
 
-    // Body
-    ctx.beginPath();
-    ctx.moveTo(ex, ey - 18 * s);
-    ctx.lineTo(ex, ey - 8 * s);
-    ctx.stroke();
+      ctx.save();
+      ctx.translate(ex, ey);
+      ctx.rotate(tilt);
 
-    // Legs
-    ctx.beginPath();
-    ctx.moveTo(ex, ey - 8 * s);
-    ctx.lineTo(ex - 4 * s + legSwing * 0.3, ey);
-    ctx.moveTo(ex, ey - 8 * s);
-    ctx.lineTo(ex + 4 * s - legSwing * 0.3, ey);
-    ctx.stroke();
+      // Body lying down
+      ctx.beginPath();
+      ctx.moveTo(0, -18 * s);
+      ctx.lineTo(0, 0);
+      ctx.stroke();
+      // Head
+      ctx.beginPath();
+      ctx.arc(0, -21 * s, 3 * s, 0, Math.PI * 2);
+      ctx.stroke();
+      // Legs
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(-4 * s, 8 * s);
+      ctx.moveTo(0, 0);
+      ctx.lineTo(4 * s, 8 * s);
+      ctx.stroke();
+      // Arms limp
+      ctx.beginPath();
+      ctx.moveTo(0, -15 * s);
+      ctx.lineTo(-6 * s, -10 * s);
+      ctx.moveTo(0, -15 * s);
+      ctx.lineTo(6 * s, -10 * s);
+      ctx.stroke();
 
-    // Arms + axe
-    ctx.beginPath();
-    ctx.moveTo(ex, ey - 15 * s);
-    ctx.lineTo(ex - 6 * s - armSwing * 0.2, ey - 10 * s);
-    ctx.stroke();
+      ctx.restore();
 
-    // Axe arm
-    ctx.beginPath();
-    ctx.moveTo(ex, ey - 15 * s);
-    const axeX = ex - 8 * s + armSwing * 0.2;
-    const axeY = ey - 14 * s;
-    ctx.lineTo(axeX, axeY);
-    ctx.stroke();
+      // Stars/daze effect
+      if (e.knockdown > 20) {
+        ctx.fillStyle = '#ff0';
+        ctx.font = `${8 * s}px sans-serif`;
+        const starX = ex + Math.sin(e.knockdown * 0.3) * 8 * s;
+        const starY = ey - 25 * s + Math.cos(e.knockdown * 0.2) * 4;
+        ctx.fillText('*', starX, starY);
+        ctx.fillText('*', starX + 10 * s, starY - 3);
+      }
+    } else {
+      // Normal walking pose
+      const legSwing = Math.sin(e.animFrame * 3) * 10;
+      const armSwing = Math.sin(e.animFrame * 3 + 1) * 8;
 
-    // Axe head
-    ctx.fillStyle = '#999';
-    ctx.fillRect(axeX - 2, axeY - 3, 4, 5);
+      // Head
+      ctx.beginPath();
+      ctx.arc(ex, ey - 21 * s, 3 * s, 0, Math.PI * 2);
+      ctx.stroke();
 
-    // HP bar for tough enemies
+      // Body
+      ctx.beginPath();
+      ctx.moveTo(ex, ey - 18 * s);
+      ctx.lineTo(ex, ey - 8 * s);
+      ctx.stroke();
+
+      // Legs
+      ctx.beginPath();
+      ctx.moveTo(ex, ey - 8 * s);
+      ctx.lineTo(ex - 4 * s + legSwing * 0.3, ey);
+      ctx.moveTo(ex, ey - 8 * s);
+      ctx.lineTo(ex + 4 * s - legSwing * 0.3, ey);
+      ctx.stroke();
+
+      // Arms + axe
+      ctx.beginPath();
+      ctx.moveTo(ex, ey - 15 * s);
+      ctx.lineTo(ex - 6 * s - armSwing * 0.2, ey - 10 * s);
+      ctx.stroke();
+
+      ctx.beginPath();
+      ctx.moveTo(ex, ey - 15 * s);
+      const axeX = ex - 8 * s + armSwing * 0.2;
+      const axeY = ey - 14 * s;
+      ctx.lineTo(axeX, axeY);
+      ctx.stroke();
+
+      // Axe head (bigger for boss)
+      ctx.fillStyle = e.boss ? '#c44' : '#999';
+      ctx.fillRect(axeX - 2 * s, axeY - 3 * s, 4 * s, 5 * s);
+
+      // Boss: angry eyes
+      if (e.boss) {
+        ctx.fillStyle = '#f00';
+        ctx.beginPath();
+        ctx.arc(ex - 1.5 * s, ey - 22 * s, 0.8 * s, 0, Math.PI * 2);
+        ctx.arc(ex + 1.5 * s, ey - 22 * s, 0.8 * s, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // HP bar (always show for bosses, show for multi-hp enemies)
     if (e.maxHP > 1) {
+      const barW = e.boss ? 50 : 14;
+      const barH = e.boss ? 5 : 2;
+      const barY = ey - (knocked ? 10 : 26 * s);
       ctx.fillStyle = '#400';
-      ctx.fillRect(ex - 7, ey - 24 * s, 14, 2);
-      ctx.fillStyle = '#f44';
-      ctx.fillRect(ex - 7, ey - 24 * s, 14 * (e.hp / e.maxHP), 2);
+      ctx.fillRect(ex - barW / 2, barY, barW, barH);
+      ctx.fillStyle = e.boss ? '#f00' : '#f44';
+      ctx.fillRect(ex - barW / 2, barY, barW * hpRatio, barH);
+      // Boss label
+      if (e.boss) {
+        ctx.fillStyle = '#f44';
+        ctx.font = 'bold 10px sans-serif';
+        ctx.fillText('BOSS', ex - 14, barY - 4);
+      }
     }
   }
 

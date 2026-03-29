@@ -107,7 +107,7 @@ canvas { display: block; width: 100vw; height: 100vh; }
   <div>Plane HP: <span class="bar-bg"><span id="planeHPBar" class="bar-fill" style="width:100%;background:#4f4;"></span></span></div>
   <div>Airport HP: <span class="bar-bg"><span id="airportHPBar" class="bar-fill" style="width:100%;background:#48f;"></span></span></div>
   <div>Zoom: <span id="zoomVal">1.0x</span> &nbsp; Nozzle: <span id="nozzleVal">0°</span></div>
-  <div style="margin-top:4px;color:#666;font-size:11px;">[W/S] Pitch &nbsp; [Q/E] Nozzle &nbsp; [DD] Thrust right &nbsp; [AA] Thrust left &nbsp; [Space] Bomb &nbsp; [F] Gun &nbsp; [V] Cam &nbsp; [Scroll] Zoom</div>
+  <div style="margin-top:4px;color:#666;font-size:11px;">[W/S] Pitch &nbsp; [Q/E] Nozzle &nbsp; [A] Left &nbsp; [D] Right &nbsp; [Space] Thrust &nbsp; [R] Bomb &nbsp; [F] Gun &nbsp; [V] Cam &nbsp; [Scroll] Zoom</div>
 </div>
 
 <div id="gameOverScreen">
@@ -117,7 +117,7 @@ canvas { display: block; width: 100vw; height: 100vh; }
   <button onclick="location.reload()">Play Again</button>
 </div>
 
-<div id="controls">W/S: Pitch &nbsp;|&nbsp; Q/E: Nozzle &nbsp;|&nbsp; DD: Thrust → &nbsp;|&nbsp; AA: Thrust ← &nbsp;|&nbsp; Space: Bomb &nbsp;|&nbsp; F: Gun &nbsp;|&nbsp; V: Cam</div>
+<div id="controls">W/S: Pitch &nbsp;|&nbsp; Q/E: Nozzle &nbsp;|&nbsp; A: Left &nbsp;|&nbsp; D: Right &nbsp;|&nbsp; Space: Thrust &nbsp;|&nbsp; R: Bomb &nbsp;|&nbsp; F: Gun &nbsp;|&nbsp; V: Cam</div>
 
 <button id="touchToggle" onclick="toggleTouch()">Show Touch Controls</button>
 
@@ -126,8 +126,8 @@ canvas { display: block; width: 100vw; height: 100vh; }
   <div class="touch-zone dpad">
     <div class="dpad-btn dpad-up" data-key="w">W</div>
     <div class="dpad-btn dpad-down" data-key="s">S</div>
-    <div class="dpad-btn dpad-left" data-key="a" data-doubletap="true">A</div>
-    <div class="dpad-btn dpad-right" data-key="d" data-doubletap="true">D</div>
+    <div class="dpad-btn dpad-left" data-key="a">←</div>
+    <div class="dpad-btn dpad-right" data-key="d">→</div>
   </div>
   <!-- Nozzle controls -->
   <div class="touch-zone nozzle-btns">
@@ -136,7 +136,8 @@ canvas { display: block; width: 100vw; height: 100vh; }
   </div>
   <!-- Action buttons -->
   <div class="touch-zone action-btns">
-    <div class="act-btn" style="right:58px;top:0" data-key=" ">BOMB</div>
+    <div class="act-btn" style="right:58px;top:0" data-key="r">BOMB</div>
+    <div class="act-btn" style="right:58px;top:98px" data-key=" ">THRUST</div>
     <div class="act-btn" style="right:0;top:50px" data-key="f">GUN</div>
     <div class="act-btn" style="right:115px;top:50px" data-key="v">CAM</div>
   </div>
@@ -275,38 +276,15 @@ function update() {
     // Clamp nozzle: -PI/2 (full down = hover) to 0 (full back = forward flight)
     p.thrusterAngle = Math.max(-Math.PI / 2, Math.min(0, p.thrusterAngle));
 
-    // D = face right / double-tap = thrust right
-    // A = face left / double-tap = thrust left
-    const now = Date.now();
-    if (keys['d'] && !keys['_d_prev']) {
-      if (now - (p._dLastTap || 0) < 300) {
-        p._dThrusting = true; // double-tap detected
-      }
-      p._dLastTap = now;
-      p.facingRight = true;
-    }
-    if (!keys['d']) p._dThrusting = false;
-    keys['_d_prev'] = keys['d'];
+    // A = face left, D = face right (direction only)
+    if (keys['d']) p.facingRight = true;
+    if (keys['a']) p.facingRight = false;
 
-    if (keys['a'] && !keys['_a_prev']) {
-      if (now - (p._aLastTap || 0) < 300) {
-        p._aThrusting = true; // double-tap detected
-      }
-      p._aLastTap = now;
-      p.facingRight = false;
-    }
-    if (!keys['a']) p._aThrusting = false;
-    keys['_a_prev'] = keys['a'];
-
-    // Apply thrust when holding after double-tap
-    if (keys['d'] && p._dThrusting) {
+    // Space = thrust in facing direction
+    if (keys[' ']) {
+      const dir = p.facingRight ? 1 : -1;
       const thrustDir = p.angle + p.thrusterAngle;
-      p.vx += Math.cos(thrustDir) * THRUST;
-      p.vy += Math.sin(thrustDir) * THRUST;
-    }
-    if (keys['a'] && p._aThrusting) {
-      const thrustDir = p.angle + p.thrusterAngle;
-      p.vx -= Math.cos(thrustDir) * THRUST;
+      p.vx += Math.cos(thrustDir) * THRUST * dir;
       p.vy += Math.sin(thrustDir) * THRUST;
     }
 
@@ -367,10 +345,11 @@ function update() {
             endGame('Crash landing! Too fast or too steep.');
             return;
           }
-          // Successful landing
+          // Successful landing — reload bombs and repair plane
           p.airborne = false;
           p.onRunway = true;
-          g.bombs = g.bombMax; // reload
+          g.bombs = g.bombMax;
+          g.planeHP = g.planeMaxHP;
         }
 
         // On the ground: clamp to runway surface
@@ -401,7 +380,7 @@ function update() {
     }
 
     // Drop bomb
-    if (keys[' '] && g.bombCooldown <= 0 && g.bombs > 0 && p.airborne) {
+    if (keys['r'] && g.bombCooldown <= 0 && g.bombs > 0 && p.airborne) {
       g.bombs--;
       g.bombCooldown = 15;
       g.bombList.push({
@@ -1152,29 +1131,30 @@ function render() {
   ctx.rotate(p.thrusterAngle);
   ctx.fillStyle = '#666';
   ctx.fillRect(-4, -3, 6, 6);
-  // Rocket boost fire when thrusting (double-tap D or A)
-  if ((keys['d'] && p._dThrusting) || (keys['a'] && p._aThrusting)) {
-    const flicker = Math.random() * 8;
-    // Outer flame (orange/red) — shoots out opposite of nozzle direction
+  // Rocket boost fire when thrusting
+  if (keys[' ']) {
+    const boostScale = 1;
+    const flicker = Math.random() * 8 * boostScale;
+    // Outer flame — bigger when boosting
     ctx.fillStyle = `rgba(255,${100 + Math.random() * 80},0,0.8)`;
     ctx.beginPath();
-    ctx.moveTo(-4, -3);
-    ctx.lineTo(-14 - flicker, 0);
-    ctx.lineTo(-4, 3);
+    ctx.moveTo(-4, -3 * boostScale);
+    ctx.lineTo(-14 * boostScale - flicker, 0);
+    ctx.lineTo(-4, 3 * boostScale);
     ctx.closePath();
     ctx.fill();
-    // Inner flame (yellow/white)
+    // Inner flame
     ctx.fillStyle = `rgba(255,255,${150 + Math.random() * 100},0.9)`;
     ctx.beginPath();
-    ctx.moveTo(-4, -1.5);
-    ctx.lineTo(-9 - flicker * 0.5, 0);
-    ctx.lineTo(-4, 1.5);
+    ctx.moveTo(-4, -1.5 * boostScale);
+    ctx.lineTo(-9 * boostScale - flicker * 0.5, 0);
+    ctx.lineTo(-4, 1.5 * boostScale);
     ctx.closePath();
     ctx.fill();
     // Glow
     ctx.fillStyle = 'rgba(255,150,0,0.2)';
     ctx.beginPath();
-    ctx.arc(-6, 0, 6 + flicker * 0.4, 0, Math.PI * 2);
+    ctx.arc(-6, 0, (6 + flicker * 0.4) * boostScale, 0, Math.PI * 2);
     ctx.fill();
   }
   ctx.restore();

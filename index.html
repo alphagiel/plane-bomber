@@ -93,6 +93,19 @@ canvas { display: block; width: 100vw; height: 100vh; }
   <label>Spawn Rate (lower = more frequent)</label>
   <input type="range" id="spawnRate" min="20" max="300" step="10" value="120">
   <span id="spawnRateVal" style="color:#aaa;font-size:12px;">120 frames</span>
+  <label>Spawn Type</label>
+  <select id="spawnType">
+    <option value="normal">Normal (zombies + bosses)</option>
+    <option value="zombies">Zombies only</option>
+    <option value="boss1">Boss 1 only</option>
+    <option value="boss2">Boss 2 only</option>
+    <option value="all_bosses">Both bosses only</option>
+    <option value="mix">All types mixed</option>
+  </select>
+  <label>Boss 1 appears every N spawns</label>
+  <input type="number" id="boss1Every" value="20" min="1" max="200">
+  <label>Boss 2 replaces Boss 1 after N bosses</label>
+  <input type="number" id="boss2After" value="5" min="1" max="50">
   <button onclick="startGame()">Take Off!</button>
   <script>
     document.getElementById('enemySpeed').oninput = function() { document.getElementById('enemySpeedVal').textContent = this.value + 'x'; };
@@ -179,6 +192,9 @@ function startGame() {
   const enemySpeedMult = parseFloat(document.getElementById('enemySpeed').value) || 0.5;
   const enemySizeMult = parseFloat(document.getElementById('enemySize').value) || 0.6;
   const spawnRate = parseInt(document.getElementById('spawnRate').value) || 120;
+  const spawnType = document.getElementById('spawnType').value;
+  const boss1Every = Math.max(1, parseInt(document.getElementById('boss1Every').value) || 20);
+  const boss2After = Math.max(1, parseInt(document.getElementById('boss2After').value) || 5);
   document.getElementById('menu').style.display = 'none';
   document.getElementById('hud').style.display = 'block';
 
@@ -223,6 +239,9 @@ function startGame() {
     gunCooldown: 0,
     zoom: 1,
     spawnCount: 0,
+    spawnType,
+    boss1Every,
+    boss2After,
   };
 
   requestAnimationFrame(loop);
@@ -241,7 +260,7 @@ function update() {
   const dt = 1; // fixed timestep per frame
 
   // Physics constants — tuned for a light prop plane feel
-  const GRAVITY = 0.035;
+  const GRAVITY = 0.07;
   const THRUST = 0.06;
   const TURN_SPEED = 0.03;
   const MAX_SPEED = 3.5;
@@ -423,7 +442,9 @@ function update() {
       const e = g.enemies[j];
       const dx = Math.abs(b.x - e.x);
       const dy = Math.abs(b.y - e.y);
-      if (dx < 8 && dy < 20) {
+      const hitW = (e.boss || e.boss2) ? 20 : 8;
+      const hitH = (e.boss || e.boss2) ? 50 : 20;
+      if (dx < hitW && dy < hitH) {
         e.gunHits = (e.gunHits || 0) + 1;
         g.gunBullets.splice(i, 1);
         if (e.gunHits >= 3) { // 3 bullet hits = 1 HP lost
@@ -431,8 +452,8 @@ function update() {
           e.gunHits = 0;
         }
         if (e.hp <= 0) {
+          g.score += (e.boss || e.boss2) ? g.diff * 50 : g.diff * 5;
           g.enemies.splice(j, 1);
-          g.score += g.diff * 5;
         }
         break;
       }
@@ -478,7 +499,7 @@ function update() {
           // Direct hit
           e.hp--;
           if (e.hp <= 0) {
-            g.score += e.boss ? g.diff * 100 : g.diff * 10;
+            g.score += (e.boss || e.boss2) ? g.diff * 100 : g.diff * 10;
             g.enemies.splice(j, 1);
             continue;
           }
@@ -486,7 +507,7 @@ function update() {
 
         if (dist < pushR && dist > 0) {
           // Displacement — push away from blast (boss is heavier)
-          const pushForce = (1 - dist / pushR) * (e.boss ? 3 : 8);
+          const pushForce = (1 - dist / pushR) * ((e.boss || e.boss2) ? 3 : 8);
           const dir = dx > 0 ? 1 : -1;
           e.pushVx = (e.pushVx || 0) + dir * pushForce;
           e.pushVy = (e.pushVy || 0) - pushForce * 0.6; // launch upward too
@@ -539,39 +560,100 @@ function update() {
     }
   }
 
+  // Plane-enemy collision (plane takes damage from touching zombies)
+  if (!g.gameOver) {
+    for (let i = g.enemies.length - 1; i >= 0; i--) {
+      const e = g.enemies[i];
+      if (e.knockdown > 0) continue; // can't hurt plane while knocked down
+      const hitW = (e.boss || e.boss2) ? 25 : 12;
+      const hitH = (e.boss || e.boss2) ? 55 : 25;
+      const dx = Math.abs(p.x - e.x);
+      const dy = Math.abs(p.y - e.y);
+      if (dx < hitW && dy < hitH) {
+        const dmg = (e.boss || e.boss2) ? 15 : 5;
+        g.planeHP -= dmg;
+        // Kill the zombie on contact
+        e.hp = 0;
+        g.enemies.splice(i, 1);
+        g.score += (e.boss || e.boss2) ? g.diff * 20 : g.diff * 2;
+        if (g.planeHP <= 0) {
+          endGame('Crashed into enemies!');
+          return;
+        }
+      }
+    }
+  }
+
   // Spawn enemies
   g.spawnTimer++;
   if (g.spawnTimer >= g.spawnInterval) {
     g.spawnTimer = 0;
     g.spawnCount++;
 
-    // Every 20 spawns, spawn a boss instead
-    if (g.spawnCount % 20 === 0) {
-      const bossHP = g.diff === 1 ? 15 : g.diff === 2 ? 25 : 35;
+    const baseSpd = g.diff === 1 ? (0.35 + Math.random() * 0.2) : g.diff === 2 ? (0.45 + Math.random() * 0.25) : (0.55 + Math.random() * 0.3);
+    const bossHP = g.diff === 1 ? 15 : g.diff === 2 ? 25 : 35;
+    const boss2HP = g.diff === 1 ? 20 : g.diff === 2 ? 30 : 45;
+    const zombieHP = g.diff === 1 ? 1 : g.diff === 2 ? 2 : 3;
+
+    // Determine what to spawn based on spawnType setting
+    let spawnBoss1 = false;
+    let spawnBoss2 = false;
+
+    if (g.spawnType === 'zombies') {
+      // Only zombies, no bosses
+    } else if (g.spawnType === 'boss1') {
+      spawnBoss1 = true;
+    } else if (g.spawnType === 'boss2') {
+      spawnBoss2 = true;
+    } else if (g.spawnType === 'all_bosses') {
+      // Alternate between boss1 and boss2
+      spawnBoss1 = g.spawnCount % 2 === 0;
+      spawnBoss2 = !spawnBoss1;
+    } else if (g.spawnType === 'mix') {
+      // Random mix of all types
+      const roll = Math.random();
+      if (roll < 0.15) spawnBoss1 = true;
+      else if (roll < 0.3) spawnBoss2 = true;
+    } else {
+      // "normal" — bosses on schedule
+      if (g.spawnCount % g.boss1Every === 0) {
+        const bossNum = Math.floor(g.spawnCount / g.boss1Every);
+        if (bossNum > g.boss2After) {
+          spawnBoss2 = true;
+        } else {
+          spawnBoss1 = true;
+        }
+      }
+    }
+
+    if (spawnBoss1) {
       g.enemies.push({
         x: WORLD_W - 60,
         y: GROUND_Y,
-        speed: 0.2 + Math.random() * 0.1, // boss has its own fixed speed
-        hp: bossHP,
-        maxHP: bossHP,
-        attackTimer: 0,
-        shootTimer: 50,
-        animFrame: 0,
-        boss: true,
+        speed: baseSpd * g.enemySpeedMult * 0.95,
+        hp: bossHP, maxHP: bossHP,
+        attackTimer: 0, shootTimer: 50, animFrame: 0,
+        boss: true, jumpVy: 0,
+      });
+    } else if (spawnBoss2) {
+      g.enemies.push({
+        x: WORLD_W - 60,
+        y: GROUND_Y,
+        speed: baseSpd * g.enemySpeedMult * 0.95,
+        hp: boss2HP, maxHP: boss2HP,
+        attackTimer: 0, shootTimer: 50, animFrame: 0,
+        boss2: true,
+        jumpTimer: 60 + Math.random() * 40,
+        jumpVy: 0,
+        bombTimer: 80 + Math.random() * 60,
       });
     } else {
-      const hp = g.diff === 1 ? 1 : g.diff === 2 ? 2 : 3;
-      const baseSpd = g.diff === 1 ? (0.35 + Math.random() * 0.2) : g.diff === 2 ? (0.45 + Math.random() * 0.25) : (0.55 + Math.random() * 0.3);
-      const spd = baseSpd * g.enemySpeedMult;
       g.enemies.push({
         x: WORLD_W - 60 + Math.random() * 30,
         y: GROUND_Y,
-        speed: spd,
-        hp: hp,
-        maxHP: hp,
-        attackTimer: 0,
-        shootTimer: Math.random() * 200,
-        animFrame: 0,
+        speed: baseSpd * g.enemySpeedMult,
+        hp: zombieHP, maxHP: zombieHP,
+        attackTimer: 0, shootTimer: Math.random() * 200, animFrame: 0,
       });
     }
   }
@@ -596,7 +678,7 @@ function update() {
       e.attackTimer++;
       e.x = Math.max(RUNWAY_X + 20, e.x); // cluster around the building
       if (e.attackTimer % 20 === 0) {
-        g.airportHP -= e.boss ? 5 : 2;
+        g.airportHP -= (e.boss || e.boss2) ? 5 : 2;
         if (g.airportHP <= 0) {
           endGame('The airport was destroyed!');
           return;
@@ -615,7 +697,50 @@ function update() {
       }
     }
 
-    // Shoot at plane (level 3 enemies + all bosses)
+    // Boss2: jumping + bomb tossing
+    if (e.boss2) {
+      // Jumping
+      e.jumpTimer--;
+      if (e.jumpTimer <= 0 && e.y >= GROUND_Y) {
+        e.jumpVy = -(4 + Math.random() * 2.5); // jump up
+        e.jumpTimer = 70 + Math.random() * 50;
+        e.y -= 1; // nudge off ground to start jump
+      }
+      // Apply jump physics
+      e.jumpVy += 0.18; // gravity
+      e.y += e.jumpVy;
+      if (e.y >= GROUND_Y) {
+        e.y = GROUND_Y;
+        e.jumpVy = 0;
+      }
+      // Crawl: move faster on ground, slower in air
+      if (e.y >= GROUND_Y) {
+        e.speed = e.speed; // normal crawl
+      }
+
+      // Toss bombs at plane
+      e.bombTimer--;
+      if (e.bombTimer <= 0) {
+        e.bombTimer = 100 + Math.random() * 80;
+        const dx = p.x - e.x;
+        const dy = p.y - e.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < 600) {
+          // Lob a bomb in an arc toward the plane
+          const toss_speed = 2.5;
+          g.enemyBullets.push({
+            x: e.x,
+            y: e.y - 30,
+            vx: (dx / dist) * toss_speed,
+            vy: -3 + (dy / dist) * toss_speed, // arc upward
+            life: 180,
+            isBomb: true, // special: has gravity, explodes
+          });
+        }
+      }
+    }
+
+    // Shoot at plane (level 3 enemies + all boss1)
     if (g.diff >= 3 || e.boss) {
       e.shootTimer--;
       if (e.shootTimer <= 0) {
@@ -651,10 +776,35 @@ function update() {
   // Update enemy bullets
   for (let i = g.enemyBullets.length - 1; i >= 0; i--) {
     const b = g.enemyBullets[i];
+    // Boss2 bombs have gravity
+    if (b.isBomb) b.vy += 0.08;
     b.x += b.vx;
     b.y += b.vy;
     b.life--;
-    if (b.life <= 0 || b.y > GROUND_Y || b.y < 0) {
+    if (b.life <= 0 || b.y < 0) {
+      g.enemyBullets.splice(i, 1);
+      continue;
+    }
+    // Boss2 bombs explode on ground
+    if (b.isBomb && b.y >= GROUND_Y) {
+      g.explosions.push({
+        x: b.x, y: GROUND_Y, r: 30, maxR: 30, life: 40,
+        particles: [], flash: 0.5, shockwave: 0,
+      });
+      g.enemyBullets.splice(i, 1);
+      // Damage plane if nearby
+      const pdx = Math.abs(b.x - p.x);
+      const pdy = Math.abs(GROUND_Y - p.y);
+      if (pdx < 40 && pdy < 40) {
+        g.planeHP -= 12;
+        if (g.planeHP <= 0) {
+          endGame('Hit by enemy bomb!');
+          return;
+        }
+      }
+      continue;
+    }
+    if (b.y > GROUND_Y) {
       g.enemyBullets.splice(i, 1);
       continue;
     }
@@ -662,10 +812,10 @@ function update() {
     const dx = b.x - p.x;
     const dy = b.y - p.y;
     if (Math.abs(dx) < 24 && Math.abs(dy) < 12) {
-      g.planeHP -= 8;
+      g.planeHP -= b.isBomb ? 15 : 8;
       g.enemyBullets.splice(i, 1);
       if (g.planeHP <= 0) {
-        endGame('Your plane was shot down!');
+        endGame(b.isBomb ? 'Hit by enemy bomb!' : 'Your plane was shot down!');
         return;
       }
     }
@@ -821,12 +971,14 @@ function render() {
     const ey = e.y;
     if (ex < -viewMargin || ex > viewMargin * 2) continue;
 
-    const s = e.boss ? 2.0 : g.enemySizeMult; // boss is big
+    const s = (e.boss || e.boss2) ? 2.0 : g.enemySizeMult; // bosses are big
     const hpRatio = e.hp / e.maxHP;
     const knocked = e.knockdown > 0;
 
     // Color
-    if (e.boss) {
+    if (e.boss2) {
+      ctx.strokeStyle = hpRatio > 0.6 ? '#0c0' : hpRatio > 0.3 ? '#8f0' : '#ff0';
+    } else if (e.boss) {
       ctx.strokeStyle = hpRatio > 0.6 ? '#f44' : hpRatio > 0.3 ? '#f80' : '#ff0';
     } else {
       ctx.strokeStyle = hpRatio > 0.6 ? '#eee' : hpRatio > 0.3 ? '#fa0' : '#f44';
@@ -877,6 +1029,85 @@ function render() {
         ctx.fillText('*', starX, starY);
         ctx.fillText('*', starX + 10 * s, starY - 3);
       }
+    } else if (e.boss2) {
+      // Boss2: crawling/jumping beast
+      const isJumping = e.y < GROUND_Y;
+      const legSwing = Math.sin(e.animFrame * 4) * 12;
+
+      if (isJumping) {
+        // Leaping pose — body stretched out, arms forward
+        // Head
+        ctx.beginPath();
+        ctx.arc(ex + 8 * s, ey - 12 * s, 3.5 * s, 0, Math.PI * 2);
+        ctx.stroke();
+        // Body (angled forward)
+        ctx.beginPath();
+        ctx.moveTo(ex + 5 * s, ey - 10 * s);
+        ctx.lineTo(ex - 8 * s, ey - 4 * s);
+        ctx.stroke();
+        // Arms reaching forward
+        ctx.beginPath();
+        ctx.moveTo(ex + 3 * s, ey - 9 * s);
+        ctx.lineTo(ex + 14 * s, ey - 14 * s);
+        ctx.moveTo(ex + 3 * s, ey - 8 * s);
+        ctx.lineTo(ex + 12 * s, ey - 6 * s);
+        ctx.stroke();
+        // Legs trailing behind
+        ctx.beginPath();
+        ctx.moveTo(ex - 8 * s, ey - 4 * s);
+        ctx.lineTo(ex - 14 * s, ey + 2 * s);
+        ctx.moveTo(ex - 8 * s, ey - 4 * s);
+        ctx.lineTo(ex - 12 * s, ey - 8 * s);
+        ctx.stroke();
+      } else {
+        // Crawling pose — hunched low to the ground
+        // Head (low, forward)
+        ctx.beginPath();
+        ctx.arc(ex + 6 * s, ey - 10 * s, 3.5 * s, 0, Math.PI * 2);
+        ctx.stroke();
+        // Body (hunched)
+        ctx.beginPath();
+        ctx.moveTo(ex + 4 * s, ey - 8 * s);
+        ctx.lineTo(ex - 6 * s, ey - 5 * s);
+        ctx.stroke();
+        // Arms (crawling motion)
+        ctx.beginPath();
+        ctx.moveTo(ex + 2 * s, ey - 7 * s);
+        ctx.lineTo(ex + 8 * s + legSwing * 0.3, ey);
+        ctx.moveTo(ex - 2 * s, ey - 6 * s);
+        ctx.lineTo(ex - 2 * s - legSwing * 0.3, ey);
+        ctx.stroke();
+        // Legs (crawling)
+        ctx.beginPath();
+        ctx.moveTo(ex - 6 * s, ey - 5 * s);
+        ctx.lineTo(ex - 10 * s + legSwing * 0.2, ey);
+        ctx.moveTo(ex - 6 * s, ey - 5 * s);
+        ctx.lineTo(ex - 4 * s - legSwing * 0.2, ey);
+        ctx.stroke();
+      }
+
+      // Green glowing eyes
+      ctx.fillStyle = '#0f0';
+      const eyeX = isJumping ? ex + 8 * s : ex + 6 * s;
+      const eyeY = isJumping ? ey - 13 * s : ey - 11 * s;
+      ctx.beginPath();
+      ctx.arc(eyeX - 1.2 * s, eyeY, 1 * s, 0, Math.PI * 2);
+      ctx.arc(eyeX + 1.2 * s, eyeY, 1 * s, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Bomb in hand when about to throw
+      if (e.bombTimer < 30) {
+        const bombX = isJumping ? ex + 14 * s : ex + 8 * s;
+        const bombY = isJumping ? ey - 14 * s : ey - 2;
+        ctx.fillStyle = '#333';
+        ctx.beginPath();
+        ctx.arc(bombX, bombY, 3 * s, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#ff0';
+        ctx.beginPath();
+        ctx.arc(bombX, bombY - 3 * s, 1.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
     } else {
       // Normal walking pose
       const legSwing = Math.sin(e.animFrame * 3) * 10;
@@ -918,7 +1149,7 @@ function render() {
       ctx.fillStyle = e.boss ? '#c44' : '#999';
       ctx.fillRect(axeX - 2 * s, axeY - 3 * s, 4 * s, 5 * s);
 
-      // Boss: angry eyes
+      // Boss1: angry eyes
       if (e.boss) {
         ctx.fillStyle = '#f00';
         ctx.beginPath();
@@ -929,19 +1160,25 @@ function render() {
     }
 
     // HP bar (always show for bosses, show for multi-hp enemies)
-    if (e.maxHP > 1) {
-      const barW = e.boss ? 50 : 14;
-      const barH = e.boss ? 5 : 2;
+    if (e.maxHP > 1 || e.boss2) {
+      const isBoss = e.boss || e.boss2;
+      const barW = isBoss ? 50 : 14;
+      const barH = isBoss ? 5 : 2;
       const barY = ey - (knocked ? 10 : 26 * s);
       ctx.fillStyle = '#400';
       ctx.fillRect(ex - barW / 2, barY, barW, barH);
-      ctx.fillStyle = e.boss ? '#f00' : '#f44';
+      ctx.fillStyle = e.boss2 ? '#0a0' : e.boss ? '#f00' : '#f44';
       ctx.fillRect(ex - barW / 2, barY, barW * hpRatio, barH);
       // Boss label
       if (e.boss) {
         ctx.fillStyle = '#f44';
         ctx.font = 'bold 10px sans-serif';
         ctx.fillText('BOSS', ex - 14, barY - 4);
+      }
+      if (e.boss2) {
+        ctx.fillStyle = '#0f0';
+        ctx.font = 'bold 10px sans-serif';
+        ctx.fillText('BOSS 2', ex - 18, barY - 4);
       }
     }
   }
@@ -1051,12 +1288,25 @@ function render() {
     ctx.fill();
   }
 
-  // Enemy bullets
-  ctx.fillStyle = '#f44';
+  // Enemy bullets and bombs
   for (const b of g.enemyBullets) {
-    ctx.beginPath();
-    ctx.arc(b.x - cx, b.y, 3, 0, Math.PI * 2);
-    ctx.fill();
+    const bx = b.x - cx;
+    if (b.isBomb) {
+      // Boss2 bomb — dark sphere with fuse
+      ctx.fillStyle = '#222';
+      ctx.beginPath();
+      ctx.arc(bx, b.y, 5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#ff0';
+      ctx.beginPath();
+      ctx.arc(bx, b.y - 5, 1.5 + Math.random(), 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      ctx.fillStyle = '#f44';
+      ctx.beginPath();
+      ctx.arc(bx, b.y, 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
 
   // Plane (hide if crashed)

@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <title>Airport Bomber Defense</title>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -23,6 +24,26 @@ canvas { border: 2px solid #333; display: block; }
 #gameOverScreen p { margin: 12px 0; font-size: 18px; }
 #gameOverScreen button { margin-top: 16px; padding: 10px 32px; font-size: 16px; background: #f90; color: #111; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; }
 #controls { position: absolute; bottom: 10px; left: 10px; color: #666; font-size: 11px; pointer-events: none; }
+#touchControls { position: absolute; bottom: 0; left: 0; right: 0; height: 200px; pointer-events: none; display: none; }
+#touchControls.visible { display: block; }
+#touchToggle { position: fixed; top: 10px; right: 10px; background: rgba(255,153,0,0.3); color: #fff; border: 2px solid #f90; border-radius: 8px; padding: 8px 16px; font-size: 14px; font-weight: bold; cursor: pointer; z-index: 9999; }
+.touch-zone { position: absolute; pointer-events: auto; }
+/* Left side - D-pad */
+.dpad { left: 20px; bottom: 20px; width: 150px; height: 150px; }
+.dpad-btn { position: absolute; width: 46px; height: 46px; background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.25); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #ccc; font-size: 12px; font-weight: bold; user-select: none; -webkit-user-select: none; }
+.dpad-btn:active, .dpad-btn.pressed { background: rgba(255,170,0,0.35); border-color: #f90; }
+.dpad-up { left: 52px; top: 0; }
+.dpad-down { left: 52px; bottom: 0; }
+.dpad-left { left: 0; top: 52px; }
+.dpad-right { right: 0; top: 52px; }
+/* Right side - action buttons */
+.action-btns { right: 20px; bottom: 20px; width: 180px; height: 150px; }
+.act-btn { position: absolute; width: 52px; height: 52px; background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.25); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #ccc; font-size: 11px; font-weight: bold; user-select: none; -webkit-user-select: none; }
+.act-btn:active, .act-btn.pressed { background: rgba(255,170,0,0.35); border-color: #f90; }
+/* Middle - nozzle buttons */
+.nozzle-btns { left: 50%; transform: translateX(-50%); bottom: 20px; width: 120px; height: 60px; }
+.nozzle-btn { position: absolute; width: 52px; height: 44px; background: rgba(255,255,255,0.10); border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #aaa; font-size: 11px; font-weight: bold; user-select: none; -webkit-user-select: none; }
+.nozzle-btn:active, .nozzle-btn.pressed { background: rgba(255,170,0,0.3); border-color: #f90; }
 </style>
 </head>
 <body>
@@ -74,6 +95,29 @@ canvas { border: 2px solid #333; display: block; }
 </div>
 
 <div id="controls">W/S: Pitch &nbsp;|&nbsp; Q/E: Nozzle &nbsp;|&nbsp; DD: Thrust → &nbsp;|&nbsp; AA: Thrust ← &nbsp;|&nbsp; Space: Bomb &nbsp;|&nbsp; F: Gun &nbsp;|&nbsp; V: Cam</div>
+
+<button id="touchToggle" onclick="toggleTouch()">Show Touch Controls</button>
+
+<div id="touchControls">
+  <!-- D-pad: direction -->
+  <div class="touch-zone dpad">
+    <div class="dpad-btn dpad-up" data-key="w">W</div>
+    <div class="dpad-btn dpad-down" data-key="s">S</div>
+    <div class="dpad-btn dpad-left" data-key="a" data-doubletap="true">A</div>
+    <div class="dpad-btn dpad-right" data-key="d" data-doubletap="true">D</div>
+  </div>
+  <!-- Nozzle controls -->
+  <div class="touch-zone nozzle-btns">
+    <div class="nozzle-btn" style="left:0" data-key="q">Q ↑</div>
+    <div class="nozzle-btn" style="right:0" data-key="e">E ↓</div>
+  </div>
+  <!-- Action buttons -->
+  <div class="touch-zone action-btns">
+    <div class="act-btn" style="right:58px;top:0" data-key=" ">BOMB</div>
+    <div class="act-btn" style="right:0;top:50px" data-key="f">GUN</div>
+    <div class="act-btn" style="right:115px;top:50px" data-key="v">CAM</div>
+  </div>
+</div>
 
 <script>
 const canvas = document.getElementById('game');
@@ -1166,6 +1210,79 @@ function crashLoop() {
     requestAnimationFrame(crashLoop);
   }
 }
+
+// --- Touch Controls ---
+function toggleTouch() {
+  const tc = document.getElementById('touchControls');
+  const btn = document.getElementById('touchToggle');
+  if (tc.classList.contains('visible')) {
+    tc.classList.remove('visible');
+    btn.textContent = 'Show Touch Controls';
+  } else {
+    tc.classList.add('visible');
+    btn.textContent = 'Hide Touch Controls';
+  }
+}
+
+// Auto-show on touch devices
+if ('ontouchstart' in window) {
+  document.getElementById('touchControls').classList.add('visible');
+  document.getElementById('touchToggle').textContent = 'Hide Touch Controls';
+}
+
+// Wire up touch buttons to simulate key presses
+(function() {
+  const allBtns = document.querySelectorAll('[data-key]');
+  const doubleTapTimers = {};
+
+  allBtns.forEach(btn => {
+    const key = btn.getAttribute('data-key');
+    const isDoubleTap = btn.getAttribute('data-doubletap') === 'true';
+
+    function press(e) {
+      e.preventDefault();
+      btn.classList.add('pressed');
+
+      if (isDoubleTap) {
+        // Simulate double-tap: fire keydown twice quickly
+        const now = Date.now();
+        if (!doubleTapTimers[key] || now - doubleTapTimers[key] > 400) {
+          // First tap
+          doubleTapTimers[key] = now;
+          keys[key] = true;
+          // Brief release then re-press to trigger double-tap detection
+          setTimeout(() => {
+            keys[key] = false;
+            keys['_' + key + '_prev'] = false;
+            setTimeout(() => { keys[key] = true; }, 20);
+          }, 30);
+        } else {
+          keys[key] = true;
+        }
+      } else {
+        keys[key] = true;
+      }
+    }
+
+    function release(e) {
+      e.preventDefault();
+      btn.classList.remove('pressed');
+      keys[key] = false;
+    }
+
+    btn.addEventListener('touchstart', press, { passive: false });
+    btn.addEventListener('touchend', release, { passive: false });
+    btn.addEventListener('touchcancel', release, { passive: false });
+    // Mouse fallback for testing on desktop
+    btn.addEventListener('mousedown', press);
+    btn.addEventListener('mouseup', release);
+    btn.addEventListener('mouseleave', release);
+  });
+
+  // Prevent default touch behavior on canvas to avoid scrolling
+  canvas.addEventListener('touchstart', e => e.preventDefault(), { passive: false });
+  canvas.addEventListener('touchmove', e => e.preventDefault(), { passive: false });
+})();
 </script>
 
 </body>

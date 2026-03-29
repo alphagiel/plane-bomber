@@ -24,26 +24,26 @@ canvas { border: 2px solid #333; display: block; }
 #gameOverScreen p { margin: 12px 0; font-size: 18px; }
 #gameOverScreen button { margin-top: 16px; padding: 10px 32px; font-size: 16px; background: #f90; color: #111; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; }
 #controls { position: absolute; bottom: 10px; left: 10px; color: #666; font-size: 11px; pointer-events: none; }
-#touchControls { position: absolute; bottom: 0; left: 0; right: 0; height: 200px; pointer-events: none; display: none; }
+#touchControls { position: fixed; bottom: 0; left: 0; right: 0; height: 200px; pointer-events: none; display: none; z-index: 9000; }
 #touchControls.visible { display: block; }
-#touchToggle { position: fixed; top: 10px; right: 10px; background: rgba(255,153,0,0.3); color: #fff; border: 2px solid #f90; border-radius: 8px; padding: 8px 16px; font-size: 14px; font-weight: bold; cursor: pointer; z-index: 9999; }
-.touch-zone { position: absolute; pointer-events: auto; }
+#touchToggle { position: fixed; top: 10px; right: 10px; background: #f90; color: #111; border: none; border-radius: 8px; padding: 10px 18px; font-size: 14px; font-weight: bold; cursor: pointer; z-index: 9999; -webkit-tap-highlight-color: transparent; }
+.touch-zone { position: fixed; pointer-events: auto; }
 /* Left side - D-pad */
 .dpad { left: 20px; bottom: 20px; width: 150px; height: 150px; }
-.dpad-btn { position: absolute; width: 46px; height: 46px; background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.25); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #ccc; font-size: 12px; font-weight: bold; user-select: none; -webkit-user-select: none; }
-.dpad-btn:active, .dpad-btn.pressed { background: rgba(255,170,0,0.35); border-color: #f90; }
-.dpad-up { left: 52px; top: 0; }
-.dpad-down { left: 52px; bottom: 0; }
-.dpad-left { left: 0; top: 52px; }
-.dpad-right { right: 0; top: 52px; }
+.dpad-btn { position: absolute; width: 50px; height: 50px; background: rgba(255,255,255,0.2); border: 2px solid rgba(255,255,255,0.4); border-radius: 10px; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 14px; font-weight: bold; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
+.dpad-btn:active, .dpad-btn.pressed { background: rgba(255,170,0,0.5); border-color: #f90; }
+.dpad-up { left: 50px; top: 0; }
+.dpad-down { left: 50px; bottom: 0; }
+.dpad-left { left: 0; top: 50px; }
+.dpad-right { right: 0; top: 50px; }
 /* Right side - action buttons */
-.action-btns { right: 20px; bottom: 20px; width: 180px; height: 150px; }
-.act-btn { position: absolute; width: 52px; height: 52px; background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.25); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #ccc; font-size: 11px; font-weight: bold; user-select: none; -webkit-user-select: none; }
-.act-btn:active, .act-btn.pressed { background: rgba(255,170,0,0.35); border-color: #f90; }
+.action-btns { right: 20px; bottom: 20px; width: 190px; height: 160px; }
+.act-btn { position: absolute; width: 58px; height: 58px; background: rgba(255,255,255,0.2); border: 2px solid rgba(255,255,255,0.4); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 12px; font-weight: bold; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
+.act-btn:active, .act-btn.pressed { background: rgba(255,170,0,0.5); border-color: #f90; }
 /* Middle - nozzle buttons */
-.nozzle-btns { left: 50%; transform: translateX(-50%); bottom: 20px; width: 120px; height: 60px; }
-.nozzle-btn { position: absolute; width: 52px; height: 44px; background: rgba(255,255,255,0.10); border: 1px solid rgba(255,255,255,0.2); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #aaa; font-size: 11px; font-weight: bold; user-select: none; -webkit-user-select: none; }
-.nozzle-btn:active, .nozzle-btn.pressed { background: rgba(255,170,0,0.3); border-color: #f90; }
+.nozzle-btns { left: 50%; transform: translateX(-50%); bottom: 20px; width: 130px; height: 60px; }
+.nozzle-btn { position: absolute; width: 56px; height: 48px; background: rgba(255,255,255,0.15); border: 2px solid rgba(255,255,255,0.3); border-radius: 10px; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 12px; font-weight: bold; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
+.nozzle-btn:active, .nozzle-btn.pressed { background: rgba(255,170,0,0.4); border-color: #f90; }
 </style>
 </head>
 <body>

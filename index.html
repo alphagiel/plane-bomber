@@ -17,8 +17,8 @@ canvas { display: block; width: 100vw; height: 100vh; }
 #menu button:hover { background: #fa0; }
 #hud { position: fixed; top: 10px; left: 10px; color: #eee; font-size: 13px; pointer-events: none; z-index: 100; }
 #hud div { margin: 2px 0; }
-.bar-bg { display: inline-block; width: 120px; height: 12px; background: #333; border-radius: 3px; vertical-align: middle; }
-.bar-fill { height: 100%; border-radius: 3px; transition: width 0.2s; }
+.bar-bg { display: inline-block; width: 120px; height: 14px; background: #222; border: 1px solid #555; border-radius: 3px; vertical-align: middle; overflow: hidden; }
+.bar-fill { display: block; height: 100%; border-radius: 2px; transition: width 0.2s; min-width: 1px; }
 #gameOverScreen { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.88); color: #eee; padding: 40px; border-radius: 12px; text-align: center; display: none; z-index: 300; }
 #gameOverScreen h1 { color: #f44; font-size: 36px; }
 #gameOverScreen p { margin: 12px 0; font-size: 18px; }

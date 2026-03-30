@@ -169,6 +169,13 @@ canvas { display: block; width: 100vw; height: 100vh; }
   <button onclick="location.reload()">Play Again</button>
 </div>
 
+<div id="respawnScreen" style="display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); background:rgba(0,0,0,0.85); color:#eee; padding:30px; border-radius:12px; text-align:center; z-index:400;">
+  <h2 style="color:#f44;">You Crashed!</h2>
+  <p id="respawnReason" style="margin:10px 0;"></p>
+  <button onclick="requestRespawn()" style="margin:8px; padding:10px 30px; font-size:16px; background:#f90; color:#111; border:none; border-radius:8px; cursor:pointer; font-weight:bold;">Respawn</button>
+  <button onclick="leaveGame()" style="margin:8px; padding:10px 30px; font-size:16px; background:#555; color:#eee; border:none; border-radius:8px; cursor:pointer;">Leave</button>
+</div>
+
 <div id="controls">W/S: Pitch &nbsp;|&nbsp; Q/E: Nozzle &nbsp;|&nbsp; A: Left &nbsp;|&nbsp; D: Right &nbsp;|&nbsp; Space: Thrust &nbsp;|&nbsp; R: Bomb &nbsp;|&nbsp; F: Gun &nbsp;|&nbsp; V: Cam</div>
 
 <button id="touchToggle" onclick="toggleTouch()">Show Touch Controls</button>
@@ -275,6 +282,12 @@ function createRoom() {
   });
   channel.on('broadcast', { event: 'input' }, ({ payload }) => {
     if (mp) mp.remoteInputs[payload.slot] = payload.keys;
+  });
+  channel.on('broadcast', { event: 'respawn' }, ({ payload }) => {
+    // Host respawns the requesting player's plane
+    if (mp && mp.isHost && game && game.planes[payload.slot]) {
+      respawnPlane(game.planes[payload.slot]);
+    }
   });
   channel.subscribe();
   mp.channel = channel;
@@ -394,6 +407,14 @@ function applyRemoteState(state) {
   game.explosions = state.explosions.map(e => ({
     ...e, particles: [], flash: 0, shockwave: e.maxR * 3 - e.life * 2,
   }));
+  // Update local plane alias
+  if (mp) {
+    game.plane = game.planes[mp.playerSlot] || game.planes[0];
+    // Hide respawn screen if we're alive again
+    if (game.plane && game.plane.alive) {
+      document.getElementById('respawnScreen').style.display = 'none';
+    }
+  }
 }
 
 function getInputForSlot(slot) {
@@ -531,11 +552,57 @@ function killPlane(p, reason) {
     x: p.x, y: p.y, r: 40, maxR: 40, life: 60,
     particles: [], flash: 1, shockwave: 0,
   });
+
+  // In multiplayer, show respawn prompt to the dead player
+  const localSlot = mp ? mp.playerSlot : 0;
+  if (game.planes.length > 1 && p.slot === localSlot) {
+    document.getElementById('respawnReason').textContent = reason;
+    document.getElementById('respawnScreen').style.display = 'block';
+    return; // don't end game, others still playing
+  }
+
   // Check if all planes dead
   const anyAlive = game.planes.some(pl => pl.alive);
   if (!anyAlive) {
     endGame(reason);
   }
+}
+
+function respawnPlane(p) {
+  p.x = RUNWAY_X + 60 + p.slot * 40;
+  p.y = RUNWAY_Y - 12;
+  p.vx = 0; p.vy = 0;
+  p.angle = 0; p.thrusterAngle = 0;
+  p.speed = 0;
+  p.airborne = false; p.onRunway = true;
+  p.facingRight = true;
+  p.hp = p.maxHP;
+  p.bombs = p.bombMax;
+  p.bombCooldown = 0; p.gunCooldown = 0;
+  p.alive = true;
+}
+
+function requestRespawn() {
+  document.getElementById('respawnScreen').style.display = 'none';
+  if (mp && mp.channel) {
+    if (mp.isHost) {
+      // Host respawns locally
+      respawnPlane(game.planes[mp.playerSlot]);
+    } else {
+      // Client asks host to respawn
+      mp.channel.send({ type: 'broadcast', event: 'respawn', payload: { slot: mp.playerSlot } });
+    }
+  } else {
+    // Solo — just respawn
+    respawnPlane(game.plane);
+  }
+}
+
+function leaveGame() {
+  document.getElementById('respawnScreen').style.display = 'none';
+  if (mp && mp.channel) mp.channel.unsubscribe();
+  mp = null;
+  location.reload();
 }
 
 function nearestAlivePlane(ex, ey) {

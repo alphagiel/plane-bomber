@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <title>Airport Bomber Defense</title>
+<script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { background: #111; display: flex; justify-content: center; align-items: center; height: 100vh; font-family: 'Segoe UI', sans-serif; overflow: hidden; }
@@ -44,6 +45,18 @@ canvas { display: block; width: 100vw; height: 100vh; }
 .nozzle-btns { left: 50%; transform: translateX(-50%); bottom: 20px; width: 130px; height: 60px; }
 .nozzle-btn { position: absolute; width: 56px; height: 48px; background: rgba(255,255,255,0.15); border: 2px solid rgba(255,255,255,0.3); border-radius: 10px; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 12px; font-weight: bold; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
 .nozzle-btn:active, .nozzle-btn.pressed { background: rgba(255,170,0,0.4); border-color: #f90; }
+/* Multiplayer lobby */
+#modeSelect { margin-bottom: 16px; }
+#modeSelect button { margin: 6px; padding: 10px 20px; font-size: 15px; background: #333; color: #eee; border: 2px solid #555; border-radius: 8px; cursor: pointer; }
+#modeSelect button:hover { border-color: #f90; }
+#modeSelect button.active { background: #f90; color: #111; border-color: #f90; }
+#lobby { display: none; }
+#lobby .room-code { font-size: 36px; font-weight: bold; color: #f90; letter-spacing: 8px; margin: 12px 0; }
+#lobby .player-list { text-align: left; margin: 12px 0; }
+#lobby .player-row { padding: 4px 8px; margin: 2px 0; border-radius: 4px; font-size: 13px; }
+.p0 { color: #f90; } .p1 { color: #0cf; } .p2 { color: #8f0; }
+#joinInput { width: 60%; text-align: center; font-size: 24px; letter-spacing: 6px; text-transform: uppercase; }
+#mpStatus { color: #888; font-size: 12px; margin-top: 8px; }
 /* Phone screens */
 @media (max-width: 700px) {
   #menu h1 { font-size: 22px; }
@@ -76,6 +89,31 @@ canvas { display: block; width: 100vw; height: 100vh; }
 <div id="menu">
   <h1>Airport Bomber Defense</h1>
   <h2>Defend your airport from the stick figure invasion!</h2>
+
+  <div id="modeSelect">
+    <button onclick="selectMode('solo')" class="active" id="btnSolo">Solo</button>
+    <button onclick="selectMode('create')" id="btnCreate">Create Room</button>
+    <button onclick="selectMode('join')" id="btnJoin">Join Room</button>
+  </div>
+
+  <div id="lobby">
+    <div id="lobbyCreate" style="display:none;">
+      <div>Room Code:</div>
+      <div class="room-code" id="roomCodeDisplay">----</div>
+      <div>Share this code with friends!</div>
+      <div class="player-list" id="playerList"></div>
+      <div id="mpStatus">Waiting for players...</div>
+    </div>
+    <div id="lobbyJoin" style="display:none;">
+      <label>Enter Room Code</label>
+      <input type="text" id="joinInput" maxlength="4" placeholder="ABCD">
+      <button onclick="joinRoom()" style="margin-top:12px;padding:8px 24px;font-size:14px;">Join</button>
+      <div id="joinStatus" style="color:#888;font-size:12px;margin-top:8px;"></div>
+      <div class="player-list" id="playerListJoin"></div>
+    </div>
+  </div>
+
+  <div id="gameSettings">
   <label>Difficulty Level</label>
   <select id="difficulty">
     <option value="1">Level 1 — Basic (slow runners, 1 hit kill)</option>
@@ -106,7 +144,8 @@ canvas { display: block; width: 100vw; height: 100vh; }
   <input type="number" id="boss1Every" value="20" min="1" max="200">
   <label>Boss 2 replaces Boss 1 after N bosses</label>
   <input type="number" id="boss2After" value="5" min="1" max="50">
-  <button onclick="startGame()">Take Off!</button>
+  </div><!-- end gameSettings -->
+  <button onclick="launchGame()" id="launchBtn">Take Off!</button>
   <script>
     document.getElementById('enemySpeed').oninput = function() { document.getElementById('enemySpeedVal').textContent = this.value + 'x'; };
     document.getElementById('enemySize').oninput = function() { document.getElementById('enemySizeVal').textContent = this.value + 'x'; };
@@ -157,6 +196,201 @@ canvas { display: block; width: 100vw; height: 100vh; }
 </div>
 
 <script>
+// --- Supabase Multiplayer ---
+const SUPABASE_URL = 'https://opztiobihdphdwpbbkyy.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9wenRpb2JpaGRwaGR3cGJia3l5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI5MjA5NDcsImV4cCI6MjA4ODQ5Njk0N30.ZyyxZRIfnxh7_irafNwSQ43QVGCrMFojvGZbgPr30tU';
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+let mp = null; // null = solo mode
+let gameMode = 'solo';
+
+const PLANE_COLORS = [
+  { body: '#f90', cockpit: '#6af', name: 'P1' },
+  { body: '#0cf', cockpit: '#6cf', name: 'P2' },
+  { body: '#8f0', cockpit: '#af6', name: 'P3' },
+];
+
+function selectMode(mode) {
+  gameMode = mode;
+  document.querySelectorAll('#modeSelect button').forEach(b => b.classList.remove('active'));
+  document.getElementById('lobby').style.display = mode === 'solo' ? 'none' : 'block';
+  document.getElementById('lobbyCreate').style.display = mode === 'create' ? 'block' : 'none';
+  document.getElementById('lobbyJoin').style.display = mode === 'join' ? 'block' : 'none';
+  document.getElementById('gameSettings').style.display = mode === 'join' ? 'none' : 'block';
+  document.getElementById('launchBtn').style.display = mode === 'join' ? 'none' : 'block';
+
+  if (mode === 'solo') {
+    document.getElementById('btnSolo').classList.add('active');
+    if (mp && mp.channel) { mp.channel.unsubscribe(); mp = null; }
+  } else if (mode === 'create') {
+    document.getElementById('btnCreate').classList.add('active');
+    createRoom();
+  } else if (mode === 'join') {
+    document.getElementById('btnJoin').classList.add('active');
+  }
+}
+
+function genRoomCode() {
+  return Array.from({length: 4}, () => String.fromCharCode(65 + Math.random() * 26 | 0)).join('');
+}
+
+function createRoom() {
+  const code = genRoomCode();
+  const playerId = crypto.randomUUID().slice(0, 8);
+
+  mp = {
+    isHost: true,
+    roomCode: code,
+    playerId,
+    playerSlot: 0,
+    channel: null,
+    players: { 0: { id: playerId, name: 'Host', slot: 0, connected: true } },
+    remoteInputs: {},
+  };
+
+  document.getElementById('roomCodeDisplay').textContent = code;
+  updatePlayerList();
+
+  const channel = sb.channel('room-' + code);
+  channel.on('broadcast', { event: 'player-join' }, ({ payload }) => {
+    const slot = Object.keys(mp.players).length;
+    if (slot >= 3) return;
+    mp.players[slot] = { id: payload.id, name: payload.name || 'Player', slot, connected: true };
+    mp.remoteInputs[slot] = {};
+    updatePlayerList();
+    // Tell everyone who's in the room
+    channel.send({ type: 'broadcast', event: 'lobby-update', payload: { players: mp.players } });
+    document.getElementById('mpStatus').textContent = Object.keys(mp.players).length + '/3 players';
+  });
+  channel.on('broadcast', { event: 'input' }, ({ payload }) => {
+    if (mp) mp.remoteInputs[payload.slot] = payload.keys;
+  });
+  channel.subscribe();
+  mp.channel = channel;
+}
+
+function joinRoom() {
+  const code = document.getElementById('joinInput').value.toUpperCase().trim();
+  if (code.length !== 4) {
+    document.getElementById('joinStatus').textContent = 'Enter a 4-letter code';
+    return;
+  }
+
+  const playerId = crypto.randomUUID().slice(0, 8);
+  document.getElementById('joinStatus').textContent = 'Connecting...';
+
+  mp = {
+    isHost: false,
+    roomCode: code,
+    playerId,
+    playerSlot: -1, // assigned by host
+    channel: null,
+    players: {},
+    remoteInputs: {},
+  };
+
+  const channel = sb.channel('room-' + code);
+
+  channel.on('broadcast', { event: 'lobby-update' }, ({ payload }) => {
+    mp.players = payload.players;
+    // Find our slot
+    for (const [slot, p] of Object.entries(mp.players)) {
+      if (p.id === mp.playerId) mp.playerSlot = parseInt(slot);
+    }
+    updatePlayerList('playerListJoin');
+    document.getElementById('joinStatus').textContent = 'In room! ' + Object.keys(mp.players).length + '/3 players. Waiting for host to start...';
+  });
+
+  channel.on('broadcast', { event: 'game-start' }, ({ payload }) => {
+    // Host started the game — apply settings and start
+    document.getElementById('joinStatus').textContent = 'Starting!';
+    applySettingsAndStart(payload.settings);
+  });
+
+  channel.on('broadcast', { event: 'state' }, ({ payload }) => {
+    if (game && mp && !mp.isHost) {
+      // Apply host state
+      applyRemoteState(payload);
+    }
+  });
+
+  channel.on('broadcast', { event: 'game-over' }, ({ payload }) => {
+    if (game) endGame(payload.reason);
+  });
+
+  channel.subscribe(() => {
+    // Send join request
+    channel.send({ type: 'broadcast', event: 'player-join', payload: { id: playerId, name: 'Player' } });
+  });
+
+  mp.channel = channel;
+}
+
+function updatePlayerList(elementId) {
+  if (!mp) return;
+  const el = document.getElementById(elementId || 'playerList');
+  el.innerHTML = '';
+  for (const [slot, p] of Object.entries(mp.players)) {
+    const row = document.createElement('div');
+    row.className = 'player-row p' + slot;
+    row.textContent = (parseInt(slot) === mp.playerSlot ? '> ' : '  ') + PLANE_COLORS[slot].name + ': ' + p.name + (p.id === mp.playerId ? ' (You)' : '');
+    el.appendChild(row);
+  }
+}
+
+function launchGame() {
+  if (gameMode === 'solo') {
+    startGame();
+  } else if (gameMode === 'create' && mp && mp.isHost) {
+    const settings = gatherSettings();
+    // Tell clients to start
+    mp.channel.send({ type: 'broadcast', event: 'game-start', payload: { settings } });
+    startGame(settings);
+  }
+}
+
+function gatherSettings() {
+  return {
+    diff: parseInt(document.getElementById('difficulty').value),
+    bombCount: Math.max(1, Math.min(50, parseInt(document.getElementById('bombCount').value) || 5)),
+    enemySpeedMult: parseFloat(document.getElementById('enemySpeed').value) || 0.5,
+    enemySizeMult: parseFloat(document.getElementById('enemySize').value) || 0.6,
+    spawnRate: parseInt(document.getElementById('spawnRate').value) || 120,
+    spawnType: document.getElementById('spawnType').value,
+    boss1Every: Math.max(1, parseInt(document.getElementById('boss1Every').value) || 20),
+    boss2After: Math.max(1, parseInt(document.getElementById('boss2After').value) || 5),
+    playerCount: mp ? Object.keys(mp.players).length : 1,
+    players: mp ? mp.players : { 0: { name: 'Player', slot: 0 } },
+  };
+}
+
+function applySettingsAndStart(settings) {
+  startGame(settings);
+}
+
+function applyRemoteState(state) {
+  if (!game) return;
+  // Overwrite game state from host
+  game.planes = state.planes;
+  game.enemies = state.enemies;
+  game.bombList = state.bombList;
+  game.gunBullets = state.gunBullets;
+  game.enemyBullets = state.enemyBullets;
+  game.score = state.score;
+  game.airportHP = state.airportHP;
+  // Rebuild explosions with particles (can't sync particles, just positions)
+  game.explosions = state.explosions.map(e => ({
+    ...e, particles: [], flash: 0, shockwave: e.maxR * 3 - e.life * 2,
+  }));
+}
+
+function getInputForSlot(slot) {
+  if (!mp) return keys;
+  if (slot === mp.playerSlot) return keys;
+  return mp.remoteInputs[slot] || {};
+}
+
+// --- Canvas and Game ---
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 
@@ -186,62 +420,66 @@ canvas.addEventListener('wheel', e => {
   game.zoom = Math.max(0.5, Math.min(3, game.zoom + delta));
 }, { passive: false });
 
-function startGame() {
-  const diff = parseInt(document.getElementById('difficulty').value);
-  const bombCount = Math.max(1, Math.min(50, parseInt(document.getElementById('bombCount').value) || 5));
-  const enemySpeedMult = parseFloat(document.getElementById('enemySpeed').value) || 0.5;
-  const enemySizeMult = parseFloat(document.getElementById('enemySize').value) || 0.6;
-  const spawnRate = parseInt(document.getElementById('spawnRate').value) || 120;
-  const spawnType = document.getElementById('spawnType').value;
-  const boss1Every = Math.max(1, parseInt(document.getElementById('boss1Every').value) || 20);
-  const boss2After = Math.max(1, parseInt(document.getElementById('boss2After').value) || 5);
+function makePlane(slot, bombCount) {
+  return {
+    x: RUNWAY_X + 60 + slot * 40,
+    y: RUNWAY_Y - 12,
+    vx: 0, vy: 0,
+    angle: 0,
+    thrusterAngle: 0,
+    speed: 0,
+    airborne: false,
+    onRunway: true,
+    facingRight: true,
+    width: 48, height: 16,
+    slot: slot,
+    hp: 100, maxHP: 100,
+    bombs: bombCount, bombMax: bombCount,
+    bombCooldown: 0, gunCooldown: 0,
+    alive: true,
+    color: PLANE_COLORS[slot] || PLANE_COLORS[0],
+  };
+}
+
+function startGame(settings) {
+  const s = settings || gatherSettings();
   document.getElementById('menu').style.display = 'none';
   document.getElementById('hud').style.display = 'block';
 
+  const playerCount = s.playerCount || 1;
+  const planes = [];
+  for (let i = 0; i < playerCount; i++) {
+    planes.push(makePlane(i, s.bombCount));
+  }
+
   game = {
-    diff,
-    bombMax: bombCount,
-    bombs: bombCount,
-    enemySpeedMult,
-    enemySizeMult,
-    spawnRateOverride: spawnRate,
+    diff: s.diff,
+    bombMax: s.bombCount,
+    enemySpeedMult: s.enemySpeedMult,
+    enemySizeMult: s.enemySizeMult,
+    spawnRateOverride: s.spawnRate,
     score: 0,
-    planeHP: 100,
-    planeMaxHP: 100,
     airportHP: 200,
     airportMaxHP: 200,
-    plane: {
-      x: RUNWAY_X + 60,
-      y: RUNWAY_Y - 12,
-      vx: 0,
-      vy: 0,
-      angle: 0, // radians, 0 = right
-      thrusterAngle: 0, // 0 = backward (forward thrust), -PI/2 = downward (upward thrust)
-      speed: 0,
-      airborne: false,
-      onRunway: true,
-      facingRight: true,
-      width: 48,
-      height: 16,
-    },
+    planes: planes,
+    plane: planes[mp ? mp.playerSlot : 0], // alias for local player (backward compat)
     bombList: [],
     explosions: [],
     enemies: [],
     enemyBullets: [],
     spawnTimer: 0,
-    spawnInterval: spawnRate,
+    spawnInterval: s.spawnRate,
     followCam: true,
     camX: 0,
     gameOver: false,
     gameOverReason: '',
-    bombCooldown: 0,
     gunBullets: [],
-    gunCooldown: 0,
     zoom: 1,
     spawnCount: 0,
-    spawnType,
-    boss1Every,
-    boss2After,
+    spawnType: s.spawnType,
+    boss1Every: s.boss1Every,
+    boss2After: s.boss2After,
+    frameCount: 0,
   };
 
   requestAnimationFrame(loop);
@@ -249,7 +487,27 @@ function startGame() {
 
 function loop() {
   if (!game) return;
-  update();
+  // Host and solo run full update; clients only render (state comes from host)
+  if (!mp || mp.isHost) {
+    update();
+  } else {
+    // Client: still send input and update HUD
+    game.frameCount = (game.frameCount || 0) + 1;
+    if (mp.channel && game.frameCount % 3 === 0) {
+      const inputKeys = {};
+      ['w','s','a','d','q','e',' ','r','f','v'].forEach(k => { if (keys[k]) inputKeys[k] = true; });
+      mp.channel.send({ type: 'broadcast', event: 'input', payload: { slot: mp.playerSlot, keys: inputKeys } });
+    }
+    // Update HUD from synced state
+    const p = game.plane;
+    if (p) {
+      document.getElementById('scoreVal').textContent = game.score;
+      document.getElementById('bombVal').textContent = p.bombs + ' / ' + p.bombMax;
+      document.getElementById('reloadMsg').style.display = p.bombs === 0 ? 'inline' : 'none';
+      document.getElementById('planeHPBar').style.width = Math.max(0, p.hp / p.maxHP * 100) + '%';
+      document.getElementById('airportHPBar').style.width = Math.max(0, game.airportHP / game.airportMaxHP * 100) + '%';
+    }
+  }
   render();
   if (!game.gameOver) requestAnimationFrame(loop);
 }
@@ -276,13 +534,18 @@ function update() {
   keys['_v_prev'] = keys['v'];
 
   if (!g.gameOver) {
-    // W - pitch up
-    if (keys['w']) {
-      p.angle -= TURN_SPEED;
+    // W/S - climb/descend (like flaps, not nosedive)
+    const CLIMB_FORCE = 0.12;
+    if (keys['w'] && p.airborne) {
+      p.vy -= CLIMB_FORCE; // push upward
     }
-    // S - pitch down
-    if (keys['s']) {
-      p.angle += TURN_SPEED;
+    if (keys['s'] && p.airborne) {
+      p.vy += CLIMB_FORCE * 0.7; // descend
+    }
+    // Visual angle derived from vertical velocity (subtle tilt, not extreme)
+    if (p.airborne) {
+      const targetAngle = Math.atan2(p.vy, Math.abs(p.vx) + 0.5) * 0.4; // damped
+      p.angle += (targetAngle - p.angle) * 0.1; // smooth lerp
     }
     // Q/E - rotate thruster nozzle
     const NOZZLE_SPEED = 0.05;
@@ -328,19 +591,11 @@ function update() {
       // Faster = more lift = can climb without even pitching up
       const liftForce = (hSpeed * hSpeed) * 0.015;
 
-      // Pitch just tilts the direction of travel — like real control surfaces
-      const pitchForce = Math.sin(p.angle) * hSpeed * 0.05;
+      // Net: gravity pulls down, wing lift pushes up
+      p.vy += GRAVITY - Math.min(liftForce, GRAVITY * 2.0);
 
-      // Net: gravity pulls down, wing lift pushes up, pitch steers
-      p.vy += GRAVITY - Math.min(liftForce, GRAVITY * 2.0) + pitchForce;
-
-      // Smooth damping — floaty glide feel
+      // Smooth vertical damping
       p.vy *= 0.94;
-
-      // Angle slowly returns toward level when not pressing W/S (stability)
-      if (!keys['w'] && !keys['s']) {
-        p.angle *= 0.96;
-      }
     }
 
     // Move
@@ -367,8 +622,8 @@ function update() {
           // Successful landing — reload bombs and repair plane
           p.airborne = false;
           p.onRunway = true;
-          g.bombs = g.bombMax;
-          g.planeHP = g.planeMaxHP;
+          p.bombs = p.bombMax;
+          p.hp = p.maxHP;
         }
 
         // On the ground: clamp to runway surface
@@ -399,9 +654,9 @@ function update() {
     }
 
     // Drop bomb
-    if (keys['r'] && g.bombCooldown <= 0 && g.bombs > 0 && p.airborne) {
-      g.bombs--;
-      g.bombCooldown = 15;
+    if (keys['r'] && p.bombCooldown <= 0 && p.bombs > 0 && p.airborne) {
+      p.bombs--;
+      p.bombCooldown = 15;
       g.bombList.push({
         x: p.x,
         y: p.y + 10,
@@ -409,11 +664,11 @@ function update() {
         vy: p.vy + 0.5,
       });
     }
-    if (g.bombCooldown > 0) g.bombCooldown--;
+    if (p.bombCooldown > 0) p.bombCooldown--;
 
     // Machine gun (F key)
-    if (keys['f'] && g.gunCooldown <= 0) {
-      g.gunCooldown = 6; // fast fire rate
+    if (keys['f'] && p.gunCooldown <= 0) {
+      p.gunCooldown = 6; // fast fire rate
       const bulletSpeed = 7;
       const dir = p.facingRight ? 1 : -1;
       g.gunBullets.push({
@@ -424,7 +679,7 @@ function update() {
         life: 60,
       });
     }
-    if (g.gunCooldown > 0) g.gunCooldown--;
+    if (p.gunCooldown > 0) p.gunCooldown--;
   }
 
   // Update gun bullets
@@ -571,12 +826,12 @@ function update() {
       const dy = Math.abs(p.y - e.y);
       if (dx < hitW && dy < hitH) {
         const dmg = (e.boss || e.boss2) ? 15 : 5;
-        g.planeHP -= dmg;
+        p.hp -= dmg;
         // Kill the zombie on contact
         e.hp = 0;
         g.enemies.splice(i, 1);
         g.score += (e.boss || e.boss2) ? g.diff * 20 : g.diff * 2;
-        if (g.planeHP <= 0) {
+        if (p.hp <= 0) {
           endGame('Crashed into enemies!');
           return;
         }
@@ -796,8 +1051,8 @@ function update() {
       const pdx = Math.abs(b.x - p.x);
       const pdy = Math.abs(GROUND_Y - p.y);
       if (pdx < 40 && pdy < 40) {
-        g.planeHP -= 12;
-        if (g.planeHP <= 0) {
+        p.hp -= 12;
+        if (p.hp <= 0) {
           endGame('Hit by enemy bomb!');
           return;
         }
@@ -812,9 +1067,9 @@ function update() {
     const dx = b.x - p.x;
     const dy = b.y - p.y;
     if (Math.abs(dx) < 24 && Math.abs(dy) < 12) {
-      g.planeHP -= b.isBomb ? 15 : 8;
+      p.hp -= b.isBomb ? 15 : 8;
       g.enemyBullets.splice(i, 1);
-      if (g.planeHP <= 0) {
+      if (p.hp <= 0) {
         endGame(b.isBomb ? 'Hit by enemy bomb!' : 'Your plane was shot down!');
         return;
       }
@@ -823,12 +1078,12 @@ function update() {
 
   // Update HUD
   document.getElementById('scoreVal').textContent = g.score;
-  document.getElementById('bombVal').textContent = g.bombs + ' / ' + g.bombMax;
-  document.getElementById('reloadMsg').style.display = g.bombs === 0 ? 'inline' : 'none';
+  document.getElementById('bombVal').textContent = p.bombs + ' / ' + p.bombMax;
+  document.getElementById('reloadMsg').style.display = p.bombs === 0 ? 'inline' : 'none';
   document.getElementById('zoomVal').textContent = g.zoom.toFixed(1) + 'x';
   document.getElementById('nozzleVal').textContent = Math.round(p.thrusterAngle * -180 / Math.PI) + '°';
-  document.getElementById('planeHPBar').style.width = Math.max(0, g.planeHP / g.planeMaxHP * 100) + '%';
-  document.getElementById('planeHPBar').style.background = g.planeHP > 50 ? '#4f4' : g.planeHP > 25 ? '#fa0' : '#f44';
+  document.getElementById('planeHPBar').style.width = Math.max(0, p.hp / p.maxHP * 100) + '%';
+  document.getElementById('planeHPBar').style.background = p.hp > 50 ? '#4f4' : p.hp > 25 ? '#fa0' : '#f44';
   document.getElementById('airportHPBar').style.width = Math.max(0, g.airportHP / g.airportMaxHP * 100) + '%';
   document.getElementById('airportHPBar').style.background = g.airportHP > 100 ? '#48f' : g.airportHP > 50 ? '#fa0' : '#f44';
 
@@ -838,6 +1093,36 @@ function update() {
     g.camX = Math.max(0, Math.min(WORLD_W - W, g.camX));
   } else {
     g.camX = 0;
+  }
+
+  // Multiplayer: host broadcasts state every 3 frames
+  g.frameCount = (g.frameCount || 0) + 1;
+  if (mp && mp.isHost && g.frameCount % 3 === 0 && mp.channel) {
+    mp.channel.send({ type: 'broadcast', event: 'state', payload: {
+      planes: g.planes.map(pl => ({
+        x: pl.x, y: pl.y, vx: pl.vx, vy: pl.vy,
+        angle: pl.angle, thrusterAngle: pl.thrusterAngle,
+        airborne: pl.airborne, onRunway: pl.onRunway,
+        facingRight: pl.facingRight, hp: pl.hp, maxHP: pl.maxHP,
+        bombs: pl.bombs, bombMax: pl.bombMax, alive: pl.alive, slot: pl.slot,
+      })),
+      enemies: g.enemies.map(e => ({
+        x: e.x, y: e.y, hp: e.hp, maxHP: e.maxHP, speed: e.speed,
+        boss: e.boss, boss2: e.boss2, animFrame: e.animFrame,
+        knockdown: e.knockdown || 0, jumpVy: e.jumpVy, bombTimer: e.bombTimer,
+      })),
+      bombList: g.bombList,
+      gunBullets: g.gunBullets,
+      enemyBullets: g.enemyBullets,
+      explosions: g.explosions.map(e => ({ x: e.x, y: e.y, life: e.life, maxR: e.maxR })),
+      score: g.score, airportHP: g.airportHP,
+    }});
+  }
+  // Multiplayer: client sends input every 3 frames
+  if (mp && !mp.isHost && g.frameCount % 3 === 0 && mp.channel) {
+    const inputKeys = {};
+    ['w','s','a','d','q','e',' ','r','f','v'].forEach(k => { if (keys[k]) inputKeys[k] = true; });
+    mp.channel.send({ type: 'broadcast', event: 'input', payload: { slot: mp.playerSlot, keys: inputKeys } });
   }
 }
 
@@ -1035,77 +1320,86 @@ function render() {
       const legSwing = Math.sin(e.animFrame * 4) * 12;
 
       if (isJumping) {
-        // Leaping pose — body stretched out, arms forward
+        // Leaping pose — body horizontal, flying through air facing left
+        ctx.save();
+        ctx.translate(ex, ey);
         // Head
         ctx.beginPath();
-        ctx.arc(ex + 8 * s, ey - 12 * s, 3.5 * s, 0, Math.PI * 2);
+        ctx.arc(-12 * s, -8 * s, 3 * s, 0, Math.PI * 2);
         ctx.stroke();
-        // Body (angled forward)
+        // Body (horizontal)
         ctx.beginPath();
-        ctx.moveTo(ex + 5 * s, ey - 10 * s);
-        ctx.lineTo(ex - 8 * s, ey - 4 * s);
+        ctx.moveTo(-9 * s, -6 * s);
+        ctx.lineTo(8 * s, -6 * s);
         ctx.stroke();
         // Arms reaching forward
         ctx.beginPath();
-        ctx.moveTo(ex + 3 * s, ey - 9 * s);
-        ctx.lineTo(ex + 14 * s, ey - 14 * s);
-        ctx.moveTo(ex + 3 * s, ey - 8 * s);
-        ctx.lineTo(ex + 12 * s, ey - 6 * s);
+        ctx.moveTo(-6 * s, -6 * s);
+        ctx.lineTo(-14 * s, -10 * s);
+        ctx.moveTo(-6 * s, -6 * s);
+        ctx.lineTo(-13 * s, -3 * s);
         ctx.stroke();
-        // Legs trailing behind
+        // Legs trailing
         ctx.beginPath();
-        ctx.moveTo(ex - 8 * s, ey - 4 * s);
-        ctx.lineTo(ex - 14 * s, ey + 2 * s);
-        ctx.moveTo(ex - 8 * s, ey - 4 * s);
-        ctx.lineTo(ex - 12 * s, ey - 8 * s);
+        ctx.moveTo(8 * s, -6 * s);
+        ctx.lineTo(13 * s, -2 * s);
+        ctx.moveTo(8 * s, -6 * s);
+        ctx.lineTo(12 * s, -10 * s);
         ctx.stroke();
+        // Eyes
+        ctx.fillStyle = '#0f0';
+        ctx.beginPath();
+        ctx.arc(-13 * s, -9 * s, 1 * s, 0, Math.PI * 2);
+        ctx.arc(-11 * s, -9 * s, 1 * s, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
       } else {
-        // Crawling pose — hunched low to the ground
-        // Head (low, forward)
+        // Crawling on all fours — very low to ground, facing left
+        ctx.save();
+        ctx.translate(ex, ey);
+        // Body (nearly horizontal, very low)
         ctx.beginPath();
-        ctx.arc(ex + 6 * s, ey - 10 * s, 3.5 * s, 0, Math.PI * 2);
+        ctx.moveTo(-6 * s, -4 * s);
+        ctx.lineTo(6 * s, -3 * s);
         ctx.stroke();
-        // Body (hunched)
+        // Head (low, jutting forward-left)
         ctx.beginPath();
-        ctx.moveTo(ex + 4 * s, ey - 8 * s);
-        ctx.lineTo(ex - 6 * s, ey - 5 * s);
+        ctx.arc(-9 * s, -5 * s, 2.5 * s, 0, Math.PI * 2);
         ctx.stroke();
-        // Arms (crawling motion)
+        // Front arms (crawling, alternating)
         ctx.beginPath();
-        ctx.moveTo(ex + 2 * s, ey - 7 * s);
-        ctx.lineTo(ex + 8 * s + legSwing * 0.3, ey);
-        ctx.moveTo(ex - 2 * s, ey - 6 * s);
-        ctx.lineTo(ex - 2 * s - legSwing * 0.3, ey);
+        ctx.moveTo(-4 * s, -3.5 * s);
+        ctx.lineTo(-8 * s + legSwing * 0.2, 0);
+        ctx.moveTo(-2 * s, -3.5 * s);
+        ctx.lineTo(-5 * s - legSwing * 0.2, 0);
         ctx.stroke();
-        // Legs (crawling)
+        // Back legs
         ctx.beginPath();
-        ctx.moveTo(ex - 6 * s, ey - 5 * s);
-        ctx.lineTo(ex - 10 * s + legSwing * 0.2, ey);
-        ctx.moveTo(ex - 6 * s, ey - 5 * s);
-        ctx.lineTo(ex - 4 * s - legSwing * 0.2, ey);
+        ctx.moveTo(4 * s, -3 * s);
+        ctx.lineTo(8 * s - legSwing * 0.2, 0);
+        ctx.moveTo(6 * s, -3 * s);
+        ctx.lineTo(10 * s + legSwing * 0.2, 0);
         ctx.stroke();
+        // Eyes (menacing, forward)
+        ctx.fillStyle = '#0f0';
+        ctx.beginPath();
+        ctx.arc(-10 * s, -6 * s, 1 * s, 0, Math.PI * 2);
+        ctx.arc(-8 * s, -6 * s, 1 * s, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
       }
-
-      // Green glowing eyes
-      ctx.fillStyle = '#0f0';
-      const eyeX = isJumping ? ex + 8 * s : ex + 6 * s;
-      const eyeY = isJumping ? ey - 13 * s : ey - 11 * s;
-      ctx.beginPath();
-      ctx.arc(eyeX - 1.2 * s, eyeY, 1 * s, 0, Math.PI * 2);
-      ctx.arc(eyeX + 1.2 * s, eyeY, 1 * s, 0, Math.PI * 2);
-      ctx.fill();
 
       // Bomb in hand when about to throw
       if (e.bombTimer < 30) {
-        const bombX = isJumping ? ex + 14 * s : ex + 8 * s;
-        const bombY = isJumping ? ey - 14 * s : ey - 2;
+        const bombX = isJumping ? ex - 14 * s : ex - 8 * s;
+        const bombY = isJumping ? ey - 8 * s : ey - 4 * s;
         ctx.fillStyle = '#333';
         ctx.beginPath();
-        ctx.arc(bombX, bombY, 3 * s, 0, Math.PI * 2);
+        ctx.arc(bombX, bombY, 2.5 * s, 0, Math.PI * 2);
         ctx.fill();
         ctx.fillStyle = '#ff0';
         ctx.beginPath();
-        ctx.arc(bombX, bombY - 3 * s, 1.5, 0, Math.PI * 2);
+        ctx.arc(bombX, bombY - 2.5 * s, 1.5, 0, Math.PI * 2);
         ctx.fill();
       }
     } else {
@@ -1417,7 +1711,7 @@ function render() {
   ctx.stroke();
 
   // Machine gun muzzle flash
-  if (g.gunCooldown > 3) {
+  if (p.gunCooldown > 3) {
     ctx.fillStyle = `rgba(255,255,100,${0.8})`;
     ctx.beginPath();
     ctx.arc(27, 0, 3 + Math.random() * 2, 0, Math.PI * 2);
@@ -1427,9 +1721,9 @@ function render() {
   ctx.restore();
 
   // Plane damage visual
-  if (g.planeHP < g.planeMaxHP * 0.5) {
+  if (p.hp < p.maxHP * 0.5) {
     // Smoke trail
-    ctx.fillStyle = `rgba(100,100,100,${0.3 * (1 - g.planeHP / g.planeMaxHP)})`;
+    ctx.fillStyle = `rgba(100,100,100,${0.3 * (1 - p.hp / p.maxHP)})`;
     for (let i = 0; i < 3; i++) {
       ctx.beginPath();
       ctx.arc(px - 20 - i * 12 + Math.random() * 6, py + Math.random() * 8, 4 + Math.random() * 4, 0, Math.PI * 2);

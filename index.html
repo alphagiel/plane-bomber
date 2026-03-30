@@ -199,7 +199,10 @@ canvas { display: block; width: 100vw; height: 100vh; }
 // --- Supabase Multiplayer ---
 const SUPABASE_URL = 'https://opztiobihdphdwpbbkyy.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9wenRpb2JpaGRwaGR3cGJia3l5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI5MjA5NDcsImV4cCI6MjA4ODQ5Njk0N30.ZyyxZRIfnxh7_irafNwSQ43QVGCrMFojvGZbgPr30tU';
-const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+let sb = null;
+try {
+  if (window.supabase) sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+} catch(e) { console.warn('Supabase init failed:', e); }
 
 let mp = null; // null = solo mode
 let gameMode = 'solo';
@@ -235,6 +238,7 @@ function genRoomCode() {
 }
 
 function createRoom() {
+  if (!sb) { document.getElementById('mpStatus').textContent = 'Multiplayer unavailable (Supabase failed to load)'; return; }
   const code = genRoomCode();
   const playerId = crypto.randomUUID().slice(0, 8);
 
@@ -270,6 +274,7 @@ function createRoom() {
 }
 
 function joinRoom() {
+  if (!sb) { document.getElementById('joinStatus').textContent = 'Multiplayer unavailable'; return; }
   const code = document.getElementById('joinInput').value.toUpperCase().trim();
   if (code.length !== 4) {
     document.getElementById('joinStatus').textContent = 'Enter a 4-letter code';

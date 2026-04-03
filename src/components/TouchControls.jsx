@@ -17,8 +17,6 @@ const BUTTONS = [
 ];
 
 export default function TouchControls({ engine }) {
-  const [visible, setVisible] = useState(() => 'ontouchstart' in window);
-
   const handlePress = useCallback((key) => {
     if (engine.current) engine.current.simulateKey(key, true);
   }, [engine]);
@@ -28,13 +26,8 @@ export default function TouchControls({ engine }) {
   }, [engine]);
 
   return (
-    <>
-      <button className="touch-toggle" onClick={() => setVisible(!visible)}>
-        {visible ? 'Hide' : 'Show'} Touch
-      </button>
-      {visible && (
-        <div className="touch-controls">
-          <div className="touch-zone dpad">
+        <div className="touch-bar">
+          <div className="touch-section dpad">
             {BUTTONS.filter(b => b.className.startsWith('dpad')).map(b => (
               <div key={b.key} className={b.className}
                 onTouchStart={(e) => { e.preventDefault(); handlePress(b.key); }}
@@ -45,7 +38,7 @@ export default function TouchControls({ engine }) {
               >{b.label}</div>
             ))}
           </div>
-          <div className="touch-zone nozzle-btns">
+          <div className="touch-section nozzle-btns">
             {BUTTONS.filter(b => b.className.startsWith('nozzle')).map(b => (
               <div key={b.key} className={b.className}
                 onTouchStart={(e) => { e.preventDefault(); handlePress(b.key); }}
@@ -56,7 +49,7 @@ export default function TouchControls({ engine }) {
               >{b.label}</div>
             ))}
           </div>
-          <div className="touch-zone action-btns">
+          <div className="touch-section action-btns">
             {BUTTONS.filter(b => b.className.startsWith('act')).map(b => (
               <div key={b.key} className={b.className}
                 onTouchStart={(e) => { e.preventDefault(); handlePress(b.key); }}
@@ -68,7 +61,5 @@ export default function TouchControls({ engine }) {
             ))}
           </div>
         </div>
-      )}
-    </>
   );
 }

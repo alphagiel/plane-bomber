@@ -44,11 +44,12 @@ body { background: #111; font-family: 'Segoe UI', sans-serif; overflow: hidden; 
 .status { color: #888; font-size: 12px; margin-top: 8px; }
 
 /* Game */
-.game-container { position: relative; width: 100vw; height: 100vh; }
+.game-wrapper { width: 100vw; height: 100vh; display: flex; flex-direction: column; align-items: center; background: #000; }
+.game-container { position: relative; flex: 1; width: 100%; max-height: 100%; aspect-ratio: 1200 / 700; overflow: hidden; }
 
 /* HUD */
 .hud {
-  position: fixed; top: 10px; left: 10px; color: #eee; font-size: 13px; pointer-events: none; z-index: 100;
+  position: absolute; top: 10px; left: 10px; color: #eee; font-size: 13px; pointer-events: none; z-index: 100;
 }
 .hud > div { margin: 2px 0; }
 .bar-bg {
@@ -59,7 +60,7 @@ body { background: #111; font-family: 'Segoe UI', sans-serif; overflow: hidden; 
 
 /* Overlay panels */
 .overlay-panel {
-  position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
   background: rgba(0,0,0,0.88); color: #eee; padding: 40px; border-radius: 12px;
   text-align: center; z-index: 400;
 }
@@ -77,53 +78,55 @@ body { background: #111; font-family: 'Segoe UI', sans-serif; overflow: hidden; 
 
 /* Controls hint */
 .controls-hint {
-  position: fixed; bottom: 10px; left: 10px; color: #666; font-size: 11px; pointer-events: none; z-index: 100;
+  position: absolute; bottom: 10px; left: 10px; color: #666; font-size: 11px; pointer-events: none; z-index: 100;
 }
 
 /* Touch controls */
 .touch-toggle {
-  position: fixed; top: 10px; right: 10px; background: #f90; color: #111;
+  position: absolute; top: 10px; right: 10px; background: #f90; color: #111;
   border: none; border-radius: 8px; padding: 10px 18px; font-size: 14px;
   font-weight: bold; cursor: pointer; z-index: 9999;
 }
-.touch-controls { position: fixed; bottom: 0; left: 0; right: 0; height: 200px; pointer-events: none; z-index: 9000; }
-.touch-zone { position: fixed; pointer-events: auto; }
-.dpad { left: 20px; bottom: 20px; width: 150px; height: 150px; }
+.touch-bar {
+  flex-shrink: 0; width: 100%; background: #1a1a1a; display: flex;
+  justify-content: space-between; align-items: center; padding: 8px 16px;
+  border-top: 1px solid #333; flex-wrap: nowrap;
+}
+/* D-pad: 3x3 grid with corners empty */
+.touch-section.dpad {
+  display: grid; grid-template-columns: repeat(3, 44px); grid-template-rows: repeat(3, 44px); gap: 2px;
+}
 .dpad-btn {
-  position: absolute; width: 50px; height: 50px; background: rgba(255,255,255,0.2);
-  border: 2px solid rgba(255,255,255,0.4); border-radius: 10px;
+  background: #2a2a2a; border: 1px solid #444; border-radius: 8px;
   display: flex; align-items: center; justify-content: center;
-  color: #fff; font-size: 14px; font-weight: bold; user-select: none;
+  color: #aaa; font-size: 13px; font-weight: bold; user-select: none;
 }
-.dpad-btn:active { background: rgba(255,170,0,0.5); border-color: #f90; }
-.dpad-up { left: 50px; top: 0; }
-.dpad-down { left: 50px; bottom: 0; }
-.dpad-left { left: 0; top: 50px; }
-.dpad-right { right: 0; top: 50px; }
-.action-btns { right: 20px; bottom: 20px; width: 190px; height: 160px; }
-.act-btn {
-  position: absolute; width: 58px; height: 58px; background: rgba(255,255,255,0.2);
-  border: 2px solid rgba(255,255,255,0.4); border-radius: 50%;
-  display: flex; align-items: center; justify-content: center;
-  color: #fff; font-size: 12px; font-weight: bold; user-select: none;
-}
-.act-btn:active { background: rgba(255,170,0,0.5); border-color: #f90; }
-.act-bomb { right: 58px; top: 0; }
-.act-gun { right: 0; top: 50px; }
-.act-thrust { right: 58px; top: 98px; }
-.act-cam { right: 115px; top: 50px; }
-.nozzle-btns { left: 50%; transform: translateX(-50%); bottom: 20px; width: 130px; height: 60px; }
+.dpad-up { grid-column: 2; grid-row: 1; }
+.dpad-down { grid-column: 2; grid-row: 3; }
+.dpad-left { grid-column: 1; grid-row: 2; }
+.dpad-right { grid-column: 3; grid-row: 2; }
+.dpad-btn:active { background: rgba(255,170,0,0.3); border-color: #f90; color: #f90; }
+/* Nozzle: 2 buttons side by side */
+.touch-section.nozzle-btns { display: flex; gap: 6px; align-items: center; }
 .nozzle-btn {
-  position: absolute; width: 56px; height: 48px; background: rgba(255,255,255,0.15);
-  border: 2px solid rgba(255,255,255,0.3); border-radius: 10px;
+  width: 52px; height: 44px; background: #2a2a2a;
+  border: 1px solid #444; border-radius: 8px;
   display: flex; align-items: center; justify-content: center;
-  color: #fff; font-size: 12px; font-weight: bold; user-select: none;
+  color: #aaa; font-size: 11px; font-weight: bold; user-select: none;
 }
-.nozzle-btn:active { background: rgba(255,170,0,0.4); border-color: #f90; }
-.nozzle-left { left: 0; }
-.nozzle-right { right: 0; }
+.nozzle-btn:active { background: rgba(255,170,0,0.3); border-color: #f90; color: #f90; }
+/* Actions: 2x2 grid */
+.touch-section.action-btns {
+  display: grid; grid-template-columns: repeat(2, 50px); grid-template-rows: repeat(2, 50px); gap: 4px;
+}
+.act-btn {
+  background: #2a2a2a; border: 1px solid #444; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  color: #aaa; font-size: 10px; font-weight: bold; user-select: none;
+}
+.act-btn:active { background: rgba(255,170,0,0.3); border-color: #f90; color: #f90; }
 
-/* Portrait mobile — compact menu & scale touch controls */
+/* Portrait mobile — compact menu */
 @media (orientation: portrait) {
   .menu-container { max-height: 100vh; padding: 12px 16px; top: 0; transform: translateX(-50%); border-radius: 0; }
   .menu-container h1 { font-size: 22px; margin-bottom: 4px; }
@@ -135,22 +138,10 @@ body { background: #111; font-family: 'Segoe UI', sans-serif; overflow: hidden; 
   .mode-select { margin-bottom: 8px; }
   .mode-select button { margin: 4px; padding: 7px 14px; font-size: 13px; }
   .launch-btn { margin-top: 12px; padding: 10px 30px; font-size: 16px; }
-  .touch-toggle { top: auto; bottom: 10px; right: 10px; padding: 6px 12px; font-size: 12px; }
-  .touch-controls { height: 160px; }
-  .dpad { left: 10px; bottom: 10px; width: 120px; height: 120px; }
-  .dpad-btn { width: 40px; height: 40px; font-size: 12px; }
-  .dpad-up { left: 40px; top: 0; }
-  .dpad-down { left: 40px; bottom: 0; }
-  .dpad-left { left: 0; top: 40px; }
-  .dpad-right { right: 0; top: 40px; }
-  .action-btns { right: 10px; bottom: 10px; width: 150px; height: 130px; }
-  .act-btn { width: 46px; height: 46px; font-size: 10px; }
-  .act-bomb { right: 46px; top: 0; }
-  .act-gun { right: 0; top: 40px; }
-  .act-thrust { right: 46px; top: 80px; }
-  .act-cam { right: 92px; top: 40px; }
-  .nozzle-btns { bottom: 10px; width: 110px; height: 50px; }
-  .nozzle-btn { width: 48px; height: 40px; font-size: 10px; }
+  .touch-bar { padding: 6px 10px; }
+  .touch-section.dpad { grid-template-columns: repeat(3, 36px); grid-template-rows: repeat(3, 36px); }
+  .touch-section.action-btns { grid-template-columns: repeat(2, 40px); grid-template-rows: repeat(2, 40px); }
+  .nozzle-btn { width: 42px; height: 36px; font-size: 10px; }
   .controls-hint { font-size: 9px; bottom: 5px; }
 }
 

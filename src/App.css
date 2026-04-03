@@ -5,8 +5,11 @@ body { background: #111; font-family: 'Segoe UI', sans-serif; overflow: hidden; 
 /* Menu */
 .menu-container {
   position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
-  background: rgba(0,0,0,0.92); color: #eee; padding: 30px; border-radius: 12px;
-  text-align: center; width: 90%; max-width: 420px; max-height: 90vh; overflow-y: auto; z-index: 200;
+  background: rgba(0,0,0,0.92); color: #eee; padding: 20px; border-radius: 12px;
+  text-align: center; width: 90%; max-width: 420px; max-height: 95vh; overflow-y: auto; z-index: 200;
+  scrollbar-width: none;
+}
+.menu-container::-webkit-scrollbar { display: none;
 }
 .menu-container h1 { font-size: 32px; margin-bottom: 8px; color: #f90; }
 .menu-container h2 { font-size: 14px; color: #888; margin-bottom: 24px; }
@@ -120,11 +123,41 @@ body { background: #111; font-family: 'Segoe UI', sans-serif; overflow: hidden; 
 .nozzle-left { left: 0; }
 .nozzle-right { right: 0; }
 
+/* Portrait mobile — compact menu & scale touch controls */
+@media (orientation: portrait) {
+  .menu-container { max-height: 100vh; padding: 12px 16px; top: 0; transform: translateX(-50%); border-radius: 0; }
+  .menu-container h1 { font-size: 22px; margin-bottom: 4px; }
+  .menu-container h2 { font-size: 12px; margin-bottom: 12px; }
+  .menu-container label { margin: 6px 0 2px; font-size: 12px; }
+  .menu-container select, .menu-container input[type="number"], .menu-container input[type="text"] {
+    padding: 5px; font-size: 13px;
+  }
+  .mode-select { margin-bottom: 8px; }
+  .mode-select button { margin: 4px; padding: 7px 14px; font-size: 13px; }
+  .launch-btn { margin-top: 12px; padding: 10px 30px; font-size: 16px; }
+  .touch-toggle { top: auto; bottom: 10px; right: 10px; padding: 6px 12px; font-size: 12px; }
+  .touch-controls { height: 160px; }
+  .dpad { left: 10px; bottom: 10px; width: 120px; height: 120px; }
+  .dpad-btn { width: 40px; height: 40px; font-size: 12px; }
+  .dpad-up { left: 40px; top: 0; }
+  .dpad-down { left: 40px; bottom: 0; }
+  .dpad-left { left: 0; top: 40px; }
+  .dpad-right { right: 0; top: 40px; }
+  .action-btns { right: 10px; bottom: 10px; width: 150px; height: 130px; }
+  .act-btn { width: 46px; height: 46px; font-size: 10px; }
+  .act-bomb { right: 46px; top: 0; }
+  .act-gun { right: 0; top: 40px; }
+  .act-thrust { right: 46px; top: 80px; }
+  .act-cam { right: 92px; top: 40px; }
+  .nozzle-btns { bottom: 10px; width: 110px; height: 50px; }
+  .nozzle-btn { width: 48px; height: 40px; font-size: 10px; }
+  .controls-hint { font-size: 9px; bottom: 5px; }
+}
+
 /* Mobile */
 @media (max-width: 700px) {
   .menu-container h1 { font-size: 22px; }
   .menu-container { padding: 20px; }
   .hud { font-size: 10px; }
   .bar-bg { width: 80px; height: 8px; }
-  .controls-hint { display: none; }
 }

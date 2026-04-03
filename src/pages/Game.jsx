@@ -76,7 +76,7 @@ export default function Game() {
 
   return (
     <div className="game-container">
-      <canvas ref={canvasRef} style={{ width: '100vw', height: '100vh', display: 'block' }} />
+      <canvas ref={canvasRef} style={{ width: '100vw', height: '100vh', display: 'block', objectFit: 'contain' }} />
 
       {hud && <HUD data={hud} />}
 

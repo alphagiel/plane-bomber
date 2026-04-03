@@ -1,4 +1,16 @@
+import { useState } from 'react';
 import { useGameStore } from '../lib/store';
+
+function NumInput({ value, min, max, fallback, onChange }) {
+  const [draft, setDraft] = useState(null);
+  return (
+    <input type="number" min={min} max={max}
+      value={draft !== null ? draft : value}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={() => { onChange(Math.max(min, parseInt(draft) || fallback)); setDraft(null); }}
+    />
+  );
+}
 
 export default function Settings() {
   const { settings, updateSetting } = useGameStore();
@@ -13,8 +25,8 @@ export default function Settings() {
       </select>
 
       <label>Bombs Per Reload</label>
-      <input type="number" value={settings.bombCount} min={1} max={50}
-        onChange={(e) => updateSetting('bombCount', Math.max(1, parseInt(e.target.value) || 5))} />
+      <NumInput value={settings.bombCount} min={1} max={50} fallback={5}
+        onChange={(v) => updateSetting('bombCount', v)} />
 
       <label>Enemy Speed: {settings.enemySpeedMult}x</label>
       <input type="range" min="0.1" max="2" step="0.1" value={settings.enemySpeedMult}
@@ -39,12 +51,12 @@ export default function Settings() {
       </select>
 
       <label>Boss 1 every N spawns</label>
-      <input type="number" value={settings.boss1Every} min={1} max={200}
-        onChange={(e) => updateSetting('boss1Every', Math.max(1, parseInt(e.target.value) || 20))} />
+      <NumInput value={settings.boss1Every} min={1} max={200} fallback={20}
+        onChange={(v) => updateSetting('boss1Every', v)} />
 
       <label>Boss 2 after N bosses</label>
-      <input type="number" value={settings.boss2After} min={1} max={50}
-        onChange={(e) => updateSetting('boss2After', Math.max(1, parseInt(e.target.value) || 5))} />
+      <NumInput value={settings.boss2After} min={1} max={50} fallback={5}
+        onChange={(v) => updateSetting('boss2After', v)} />
     </div>
   );
 }

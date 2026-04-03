@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { useGameStore } from '../lib/store';
 import { GameEngine } from '../game/engine';
 import { bindRender } from '../game/render';
@@ -12,6 +12,7 @@ export default function Game() {
   const [hud, setHud] = useState(null);
   const [gameOverInfo, setGameOverInfo] = useState(null);
   const [respawnInfo, setRespawnInfo] = useState(null);
+  const [showTouch, setShowTouch] = useState(() => 'ontouchstart' in window);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -75,34 +76,40 @@ export default function Game() {
   }
 
   return (
-    <div className="game-container">
-      <canvas ref={canvasRef} style={{ width: '100vw', height: '100vh', display: 'block', objectFit: 'contain' }} />
+    <div className="game-wrapper">
+      <div className="game-container">
+        <canvas ref={canvasRef} style={{ width: '100%', height: '100%', display: 'block' }} />
 
-      {hud && <HUD data={hud} />}
+        {hud && <HUD data={hud} />}
 
-      <TouchControls engine={engineRef} />
+        <button className="touch-toggle" onClick={() => setShowTouch(!showTouch)}>
+          {showTouch ? 'Hide' : 'Show'} Touch
+        </button>
 
-      {respawnInfo && (
-        <div className="overlay-panel">
-          <h2 style={{ color: '#f44' }}>You Crashed!</h2>
-          <p>{respawnInfo.reason}</p>
-          <button className="btn-primary" onClick={handleRespawn}>Respawn</button>
-          <button className="btn-secondary" onClick={handleLeave}>Leave</button>
+        {respawnInfo && (
+          <div className="overlay-panel">
+            <h2 style={{ color: '#f44' }}>You Crashed!</h2>
+            <p>{respawnInfo.reason}</p>
+            <button className="btn-primary" onClick={handleRespawn}>Respawn</button>
+            <button className="btn-secondary" onClick={handleLeave}>Leave</button>
+          </div>
+        )}
+
+        {gameOverInfo && (
+          <div className="overlay-panel">
+            <h1 style={{ color: '#f44' }}>GAME OVER</h1>
+            <p>{gameOverInfo.reason}</p>
+            <p>Final Score: {gameOverInfo.score}</p>
+            <button className="btn-primary" onClick={() => location.reload()}>Play Again</button>
+          </div>
+        )}
+
+        <div className="controls-hint">
+          A: Left | D: Right | Space: Thrust | W/S: Climb/Dive | Q/E: Nozzle | R: Bomb | F: Gun | V: Cam
         </div>
-      )}
-
-      {gameOverInfo && (
-        <div className="overlay-panel">
-          <h1 style={{ color: '#f44' }}>GAME OVER</h1>
-          <p>{gameOverInfo.reason}</p>
-          <p>Final Score: {gameOverInfo.score}</p>
-          <button className="btn-primary" onClick={() => location.reload()}>Play Again</button>
-        </div>
-      )}
-
-      <div className="controls-hint">
-        A: Left | D: Right | Space: Thrust | W/S: Climb/Dive | Q/E: Nozzle | R: Bomb | F: Gun | V: Cam
       </div>
+
+      {showTouch && <TouchControls engine={engineRef} />}
     </div>
   );
 }
